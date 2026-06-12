@@ -1,5 +1,6 @@
 import { analyzeClaim } from "@/lib/analyzeClaim";
 import type { BrandComplianceProfile } from "@/lib/brandProfile";
+import { channelToContextType, regionToMarket, sectorToProductCategory } from "@/lib/sectorMapping";
 
 export type RiskCard = {
   id: string;
@@ -151,10 +152,12 @@ export function analyzeFirstClaimPreview(profile: BrandComplianceProfile): First
   // Uses deterministic rules engine — swap for AI endpoint when connected.
   const result = analyzeClaim({
     claimText: claim,
-    productCategory: profile.sector || "Dietary Supplement",
+    productCategory: sectorToProductCategory(profile.sector),
     ingredients: profile.ingredients.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean),
-    market: profile.salesRegions[0] || "United States",
-    contextType: profile.salesChannels.includes("Instagram / Meta Ads") ? "Ad copy" : "Website",
+    market: profile.salesRegions[0] ? regionToMarket(profile.salesRegions[0]) : "United States FDA + FTC",
+    contextType: profile.salesChannels.find((c) => /instagram|meta|amazon|google/i.test(c))
+      ? channelToContextType(profile.salesChannels.find((c) => /instagram|meta|amazon|google/i.test(c))!)
+      : "Website",
   });
 
   const riskLabel = result.riskLevel === "high" ? "High Risk" : result.riskLevel === "medium" ? "Medium Risk" : "Lower Risk";

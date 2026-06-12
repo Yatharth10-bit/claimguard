@@ -10,7 +10,12 @@ import {
   Upload, WandSparkles, AlertTriangle, CalendarDays, ChevronDown, Printer, ScanText,
   UserRound, X, Zap, Sun, Moon, Contrast, Globe2
 } from "lucide-react";
+import { ClaimExamplePicker } from "@/components/claim-checker/ClaimExamplePicker";
+import { RegressionCoverageBadge } from "@/components/claim-checker/RegressionCoverageBadge";
+import { RiskPatternTips } from "@/components/claim-checker/RiskPatternTips";
 import { CheckFirstClaimCTA } from "@/components/landing/CheckFirstClaimCTA";
+import { sectorToProductCategory, regionToMarket } from "@/lib/sectorMapping";
+import type { ClaimExample } from "@/lib/claimLearnings";
 import { PersonalizedDashboardHeader, PersonalizedDashboardSections } from "@/components/dashboard/PersonalizedDashboardLayer";
 import { BrandProfileSettings } from "@/components/onboarding/BrandProfileSettings";
 import { OnboardingPage } from "@/components/onboarding/OnboardingPage";
@@ -1086,6 +1091,7 @@ function SourceEvidencePanel({ source, whyItMatters, lastChecked }: { source: { 
 function ClaimChecker() {
   const searchParams = useSearchParams();
   const { products } = useProducts();
+  const { profile } = useBrandProfile();
   const [product, setProduct] = useState("");
   const [context, setContext] = useState("Website");
   const [claim, setClaim] = useState("");
@@ -1099,45 +1105,110 @@ function ClaimChecker() {
     if (productId) setProduct(productId);
   }, [searchParams]);
 
+  const buildAnalysisInput = () => {
+    const selected = products.find((item) => item.id === product);
+    const brandCategory = sectorToProductCategory(profile?.sector || "");
+    const brandMarket = profile?.salesRegions[0] ? regionToMarket(profile.salesRegions[0]) : "United States FDA + FTC";
+    const brandIngredients = profile?.ingredients
+      ? profile.ingredients.split(/[,;\n]+/).map((item) => item.trim()).filter(Boolean)
+      : [];
+    return {
+      claimText: claim.trim(),
+      contextType: context,
+      productCategory: selected?.category || brandCategory,
+      ingredients: selected?.ingredients || brandIngredients,
+      market: selected?.market || brandMarket,
+    };
+  };
+
+  const analysisFromRules = (input: ReturnType<typeof buildAnalysisInput>, savedRemotely = false): ClaimAnalysis => {
+    const rulesResult = analyzeClaim(input);
+    const selected = products.find((item) => item.id === product);
+    return {
+      id: crypto.randomUUID(),
+      originalClaim: input.claimText,
+      context: input.contextType,
+      product: selected?.name || profile?.brandName || "Unassigned",
+      date: formatDate(new Date().toISOString()),
+      riskLevel: rulesResult.riskLevel,
+      riskScore: rulesResult.riskScore,
+      riskyPhrases: rulesResult.riskyPhrases,
+      explanation: rulesResult.explanation,
+      saferRewrite: rulesResult.saferRewrite,
+      checklist: rulesResult.checklist,
+      sources: rulesResult.sourceReferences.map((source) => ({ title: source.title, url: source.url })),
+      disclaimer: rulesResult.disclaimer,
+      status: rulesResult.riskLevel === "high" ? "Expert Review Needed" : "Needs Review",
+      storage: savedRemotely ? "workspace" : "local",
+    };
+  };
+
+  const persistLocalAnalysis = (analysis: ClaimAnalysis, warning?: string) => {
+    writeClaimFallback([analysis, ...readClaimFallback().filter((item) => item.id !== analysis.id)]);
+    if (useDevelopmentFallback) {
+      const claims = readFallback("claimguard-claims", demoClaims);
+      writeFallback("claimguard-claims", [analysis, ...claims.filter((item) => item.id !== analysis.id)]);
+    }
+    if (warning) setError(warning);
+  };
+
   const analyze = async () => {
     setLoading(true);
     setError("");
     setResult(null);
+    const input = buildAnalysisInput();
     try {
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          claimText: claim.trim(),
-          contextType: context,
-          productId: isSupabaseConfigured() ? product || null : null,
-          productCategory: products.find((item) => item.id === product)?.category || "Other",
-          ingredients: products.find((item) => item.id === product)?.ingredients || [],
-          market: products.find((item) => item.id === product)?.market || "United States FDA + FTC",
-        }),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Analysis failed.");
-      const analysis = {
-        ...rowToAnalysis(body.analysis),
-        product: products.find((item) => item.id === product)?.name || "Unassigned",
-        storage: body.saved === false ? "local" as const : "workspace" as const,
-      };
-      setResult(analysis);
-      await recordAudit("Claim checked", `${analysis.product}: ${analysis.riskLevel} risk (${analysis.riskScore}/100)`);
-      if (body.saved === false) {
-        writeClaimFallback([analysis, ...readClaimFallback().filter((item) => item.id !== analysis.id)]);
-        setError(body.warning || "Analysis completed and was saved locally.");
-      } else if (useDevelopmentFallback) {
-        const claims = readFallback("claimguard-claims", demoClaims);
-        writeFallback("claimguard-claims", [analysis, ...claims.filter((item) => item.id !== analysis.id)]);
+      let analysis: ClaimAnalysis | null = null;
+      let usedClientFallback = false;
+
+      if (isSupabaseConfigured()) {
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            claimText: input.claimText,
+            contextType: input.contextType,
+            productId: product || null,
+            productCategory: input.productCategory,
+            ingredients: input.ingredients,
+            market: input.market,
+          }),
+        });
+        const body = await response.json();
+        if (response.ok) {
+          analysis = {
+            ...rowToAnalysis(body.analysis),
+            product: products.find((item) => item.id === product)?.name || profile?.brandName || "Unassigned",
+            storage: body.saved === false ? "local" as const : "workspace" as const,
+          };
+          if (body.saved === false) persistLocalAnalysis(analysis, body.warning || "Analysis completed and was saved locally.");
+        } else if (response.status === 401 && useDevelopmentFallback) {
+          usedClientFallback = true;
+        } else {
+          throw new Error(body.error || "Analysis failed.");
+        }
       }
+
+      if (!analysis) {
+        analysis = analysisFromRules(input, false);
+        usedClientFallback = true;
+        persistLocalAnalysis(analysis, isSupabaseConfigured() ? "Analysis ran locally because the workspace session was unavailable." : "Analysis completed using the local rules engine.");
+      }
+
+      setResult(analysis);
+      await recordAudit("Claim checked", `${analysis.product}: ${analysis.riskLevel} risk (${analysis.riskScore}/100)${usedClientFallback ? " [local]" : ""}`);
     } catch (analysisError) {
       setError(analysisError instanceof Error ? analysisError.message : "Analysis failed.");
     } finally {
       setLoading(false);
       setCopied(false);
     }
+  };
+
+  const applyExample = (example: ClaimExample) => {
+    setClaim(example.claim);
+    setContext(example.context || "Website");
+    setResult(null);
   };
 
   const updateStatus = async (status: ClaimStatus) => {
@@ -1187,8 +1258,9 @@ function ClaimChecker() {
   };
 
   return (
-    <AppShell title="Claim checker" subtitle="Analyze a claim for FDA and FTC risk flags before publishing.">
-      <div className="grid gap-6 lg:grid-cols-2">
+    <AppShell title="Claim checker" subtitle="Analyze a claim for FDA and FTC risk flags before publishing. Validated across 100 product scenarios.">
+      <RegressionCoverageBadge />
+      <div className="mt-5 grid gap-6 lg:grid-cols-2">
         <section className="surface p-5 sm:p-7">
           {error && <Notice text={error} />}
           <div className="grid gap-5 sm:grid-cols-2">
@@ -1210,11 +1282,12 @@ function ClaimChecker() {
             </Field>
             <div className="mt-3 flex items-center justify-between">
               <p className="text-xs text-muted">{claim.length}/5000 characters</p>
-              <button disabled={!claim.trim() || loading} onClick={analyze} className="primary">
+              <button disabled={!claim.trim() || loading} onClick={() => void analyze()} className="primary">
                 {loading ? <LoaderCircle size={17} className="animate-spin" /> : <Sparkles size={17} />}
                 {loading ? "Analyzing..." : "Analyze claim"}
               </button>
             </div>
+            <ClaimExamplePicker sector={profile?.sector || "Other"} onSelect={applyExample} />
           </div>
         </section>
         <aside className="space-y-5">
@@ -1237,15 +1310,7 @@ function ClaimChecker() {
             </div>
           </div>
           )}
-          {!result && <div className="surface p-5">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-blue-600"><Lightbulb size={18} /></span>
-            <h2 className="mt-4 font-bold">Tips for a useful check</h2>
-            <div className="mt-4 space-y-4">
-              {["Check one clear claim at a time.", "Choose the exact publishing context.", "Avoid disease, cure, prevention, and guarantee language."].map((item) => (
-                <p className="flex gap-3 text-sm leading-6 text-muted" key={item}><CheckCircle2 size={17} className="mt-1 shrink-0 text-lavender" />{item}</p>
-              ))}
-            </div>
-          </div>}
+          {!result && <RiskPatternTips />}
           <div className="rounded-2xl bg-ink p-5 text-white">
             <p className="text-xs font-bold uppercase tracking-wider text-white/50">Resilient analysis</p>
             <p className="mt-3 text-sm leading-6 text-white/80">ClaimGuard uses an inspectable rules engine with product category, ingredients, market, and publishing context. No AI API is required.</p>
@@ -2229,6 +2294,9 @@ function Landing() {
                   <Link href="/claim-checker" className="font-bold text-lavender">Full check</Link>
                 </div>
               )}
+            </div>
+            <div className="mt-3">
+              <RegressionCoverageBadge compact />
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
               <CheckFirstClaimCTA />

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, ClipboardCheck, Landmark, ShieldCheck, Sparkles } from "lucide-react";
+import { RegressionCoverageBadge } from "@/components/claim-checker/RegressionCoverageBadge";
 import type { BrandComplianceProfile } from "@/lib/brandProfile";
 import { formatRegionsList, sectorLabel } from "@/lib/brandProfile";
 import {
@@ -35,6 +36,7 @@ export function PersonalizedDashboardSections({ profile }: PersonalizedSectionsP
 
   return (
     <div className="personalized-dashboard-layer mb-8 space-y-5">
+      <RegressionCoverageBadge />
       {firstClaim && (
         <section className={`surface overflow-hidden border-l-4 p-5 sm:p-6 ${firstClaim.riskLevel === "high" ? "border-l-high" : firstClaim.riskLevel === "medium" ? "border-l-medium" : "border-l-safe"}`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
