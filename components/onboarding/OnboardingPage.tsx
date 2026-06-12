@@ -119,7 +119,7 @@ export function OnboardingPage() {
             Set up your Brand Compliance Profile
           </h1>
           <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted">
-            Answer a few quick questions so ClaimGuard can personalize your risk score, regulation feed, and claim checks for your brand.
+            Answer five quick questions so ClaimGuard can personalize your risk score, regulation feed, and claim checks for your brand.
           </p>
         </div>
 

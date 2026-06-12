@@ -105,7 +105,7 @@ export function PersonalizedDashboardSections({ profile }: PersonalizedSectionsP
           <Landmark size={18} className="text-lavender" />
           <div>
             <h2 className="font-bold">Regulation feed for your brand</h2>
-            <p className="mt-1 text-xs text-muted">Placeholder updates matched to your regions and channels</p>
+            <p className="mt-1 text-xs text-muted">Official-source guidance matched to your regions and channels</p>
           </div>
         </div>
         <div className="divide-y divide-slate-100">

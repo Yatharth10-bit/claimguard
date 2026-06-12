@@ -2,7 +2,6 @@
 
 import { Check } from "lucide-react";
 import type { OnboardingDraft, OnboardingStep } from "@/components/onboarding/onboarding-config";
-import { getProductSuggestions } from "@/components/onboarding/onboarding-config";
 
 type OnboardingFlashcardProps = {
   step: OnboardingStep;
@@ -13,7 +12,7 @@ type OnboardingFlashcardProps = {
 
 export function OnboardingFlashcard({ step, draft, direction, onChange }: OnboardingFlashcardProps) {
   const value = draft[step.id];
-  const suggestions = step.id === "productType" ? getProductSuggestions(draft.sector) : step.suggestions;
+  const suggestions = step.suggestions;
 
   return (
     <div

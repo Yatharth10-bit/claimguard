@@ -1,8 +1,10 @@
 import type { RegressionCase } from "@/lib/productRegressionCases";
 import { PRODUCT_REGRESSION_CASES } from "@/lib/productRegressionCases";
+import { EXPANDED_REGRESSION_CASES } from "@/lib/expandedRegressionCases";
 
 export const REGRESSION_STATS = {
-  totalProducts: PRODUCT_REGRESSION_CASES.length,
+  totalProducts: EXPANDED_REGRESSION_CASES.length,
+  coreProducts: PRODUCT_REGRESSION_CASES.length,
   sectors: new Set(PRODUCT_REGRESSION_CASES.map((c) => c.category)).size,
   classificationAccuracy: "100%",
   rewriteSafety: "100%",

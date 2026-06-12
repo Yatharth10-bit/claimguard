@@ -10,10 +10,16 @@ import {
   Upload, WandSparkles, AlertTriangle, CalendarDays, ChevronDown, Printer, ScanText,
   UserRound, X, Zap, Sun, Moon, Contrast, Globe2
 } from "lucide-react";
+import { BetaBadge } from "@/components/billing/BetaBadge";
+import { UsageMeter } from "@/components/billing/UsageMeter";
+import { WeeklyDigestPanel } from "@/components/billing/WeeklyDigestPanel";
 import { ClaimExamplePicker } from "@/components/claim-checker/ClaimExamplePicker";
+import { ComplianceCopilotPanel } from "@/components/claim-checker/ComplianceCopilotPanel";
 import { RegressionCoverageBadge } from "@/components/claim-checker/RegressionCoverageBadge";
 import { RiskPatternTips } from "@/components/claim-checker/RiskPatternTips";
+import { RegulationImpactExplainer } from "@/components/regulations/RegulationImpactExplainer";
 import { CheckFirstClaimCTA } from "@/components/landing/CheckFirstClaimCTA";
+import { FeedbackForm } from "@/components/support/FeedbackForm";
 import {
   BILLING_TIER_TO_DODO,
   formatEnterpriseFrom,
@@ -30,9 +36,10 @@ import { PersonalizedDashboardHeader, PersonalizedDashboardSections } from "@/co
 import { BrandProfileSettings } from "@/components/onboarding/BrandProfileSettings";
 import { OnboardingPage } from "@/components/onboarding/OnboardingPage";
 import { useBrandProfile } from "@/hooks/useBrandProfile";
+import { useUsage } from "@/hooks/useUsage";
 import { BRAND_ONBOARDING_ENABLED, isOnboardingComplete, loadBrandProfile } from "@/lib/brandProfile";
 import { getSupabaseBrowser, isSupabaseConfigured } from "@/lib/supabase/client";
-import { analyzeClaim } from "@/lib/analyzeClaim";
+import { analyzeClaim, CLAIM_DISCLAIMER } from "@/lib/analyzeClaim";
 import { calculateProductRisk, matchRegulationImpacts, needsSupplementDisclaimer, splitClaimLikeSentences } from "@/lib/workflow";
 import { MARKET_OPTIONS, PRODUCT_CATEGORIES } from "@/lib/complianceData";
 import { REGULATORY_SOURCES } from "@/lib/regulatorySources";
@@ -163,7 +170,7 @@ const demoClaims: ClaimAnalysis[] = [
       { title: "FDA: Structure/Function Claims", url: "https://www.fda.gov/food/food-labeling-nutrition/structurefunction-claims" },
       { title: "FTC: Health Products Compliance Guidance", url: "https://www.ftc.gov/business-guidance/resources/health-products-compliance-guidance" },
     ],
-    disclaimer: "ClaimGuard provides AI-assisted risk flags and educational guidance. It is not legal advice. Consult a qualified compliance professional before publishing high-risk claims.",
+    disclaimer: CLAIM_DISCLAIMER,
     status: "Approved",
   },
   {
@@ -187,7 +194,7 @@ const demoClaims: ClaimAnalysis[] = [
       { title: "FDA: Structure/Function Claims", url: "https://www.fda.gov/food/food-labeling-nutrition/structurefunction-claims" },
       { title: "FTC: Health Products Compliance Guidance", url: "https://www.ftc.gov/business-guidance/resources/health-products-compliance-guidance" },
     ],
-    disclaimer: "ClaimGuard provides AI-assisted risk flags and educational guidance. It is not legal advice. Consult a qualified compliance professional before publishing high-risk claims.",
+    disclaimer: CLAIM_DISCLAIMER,
     status: "Expert Review Needed",
   },
 ];
@@ -205,7 +212,7 @@ const demoRegulations: RegulationUpdate[] = REGULATORY_SOURCES.map((source, inde
   notes: "",
 }));
 
-const fallbackDisclaimer = "ClaimGuard provides AI-assisted risk flags and educational guidance. It is not legal advice. Consult a qualified compliance professional before publishing high-risk claims.";
+const fallbackDisclaimer = CLAIM_DISCLAIMER;
 const useDevelopmentFallback = process.env.NODE_ENV === "development" && !isSupabaseConfigured();
 
 const nav = [
@@ -670,6 +677,7 @@ function useAudit() {
 }
 
 function Dashboard() {
+  const { usage } = useUsage();
   const router = useRouter();
   const { products, loading: productsLoading, error: productsError } = useProducts();
   const { claims, loading: claimsLoading, error: claimsError } = useClaims();
@@ -697,6 +705,10 @@ function Dashboard() {
       subtitle={personalizedHeader?.subtitle || "Here is what needs your attention today."}
       action={<Link href="/claim-checker" className="primary"><Sparkles size={17} /> Check a claim</Link>}
     >
+      <div className="mb-5 grid gap-5 xl:grid-cols-[1fr_1fr]">
+        <UsageMeter usage={usage} />
+        <WeeklyDigestPanel />
+      </div>
       {onboardingEnabled && isComplete && profile && <PersonalizedDashboardSections profile={profile} />}
       {(productsError || claimsError) && <Notice text={productsError || claimsError} />}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
@@ -877,22 +889,21 @@ function AddProduct() {
       setSaving(false);
       return;
     }
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      router.push("/login");
-      return;
-    }
-    const { error: dbError } = await supabase.from("products").insert({
-      user_id: user.id,
-      name: form.name.trim(),
-      category: form.category,
-      market: form.market,
-      platforms: form.platforms,
-      ingredients: form.ingredients,
-      claims_text: form.claims,
+    const response = await fetch("/api/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: form.name.trim(),
+        category: form.category,
+        market: form.market,
+        platforms: form.platforms,
+        ingredients: form.ingredients,
+        claims: form.claims,
+      }),
     });
-    if (dbError) {
-      setError(dbError.message);
+    const body = await response.json();
+    if (!response.ok) {
+      setError(body.error || "Unable to add product.");
       setSaving(false);
       return;
     }
@@ -1007,7 +1018,21 @@ function AddProduct() {
   );
 }
 
-function AnalysisResult({ result, copied, onCopy, onStatus, onTask }: { result: ClaimAnalysis; copied: boolean; onCopy: () => void; onStatus: (status: ClaimStatus) => void; onTask?: () => void }) {
+type CopilotPayload = {
+  claimText: string;
+  productCategory: string;
+  ingredients: string[];
+  market: string;
+  contextType: string;
+  riskLevel: RiskLevel;
+  riskScore: number;
+  riskyPhrases: string[];
+  explanation: string;
+  saferRewrite: string;
+  sources: { title: string; url: string; organization?: string; category?: string }[];
+};
+
+function AnalysisResult({ result, copied, onCopy, onStatus, onTask, copilotPayload }: { result: ClaimAnalysis; copied: boolean; onCopy: () => void; onStatus: (status: ClaimStatus) => void; onTask?: () => void; copilotPayload?: CopilotPayload }) {
   return (
     <div className="mt-6 border-t border-black/[.06] pt-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -1053,6 +1078,7 @@ function AnalysisResult({ result, copied, onCopy, onStatus, onTask }: { result: 
             ))}
           </div>
         </ResultSection>
+        {copilotPayload && <ComplianceCopilotPanel payload={copilotPayload} />}
         <p className="rounded-xl bg-stone p-4 text-xs leading-5 text-muted">{result.disclaimer}</p>
         <div className="flex flex-wrap gap-2">
           <button onClick={onCopy} className="secondary"><Copy size={16} />{copied ? "Copied" : "Copy"}</button>
@@ -1102,10 +1128,12 @@ function ClaimChecker() {
   const searchParams = useSearchParams();
   const { products } = useProducts();
   const { profile } = useBrandProfile();
+  const { usage, refresh: refreshUsage } = useUsage();
   const [product, setProduct] = useState("");
   const [context, setContext] = useState("Website");
   const [claim, setClaim] = useState("");
   const [result, setResult] = useState<ClaimAnalysis | null>(null);
+  const [copilotPayload, setCopilotPayload] = useState<CopilotPayload | null>(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1166,6 +1194,7 @@ function ClaimChecker() {
     setLoading(true);
     setError("");
     setResult(null);
+    setCopilotPayload(null);
     const input = buildAnalysisInput();
     try {
       let analysis: ClaimAnalysis | null = null;
@@ -1194,6 +1223,8 @@ function ClaimChecker() {
           if (body.saved === false) persistLocalAnalysis(analysis, body.warning || "Analysis completed and was saved locally.");
         } else if (response.status === 401 && useDevelopmentFallback) {
           usedClientFallback = true;
+        } else if (response.status === 402) {
+          throw new Error(`${body.error} Upgrade at Settings → Subscription.`);
         } else {
           throw new Error(body.error || "Analysis failed.");
         }
@@ -1206,7 +1237,21 @@ function ClaimChecker() {
       }
 
       setResult(analysis);
+      setCopilotPayload({
+        claimText: input.claimText,
+        productCategory: input.productCategory,
+        ingredients: input.ingredients,
+        market: input.market,
+        contextType: input.contextType,
+        riskLevel: analysis.riskLevel,
+        riskScore: analysis.riskScore,
+        riskyPhrases: analysis.riskyPhrases,
+        explanation: analysis.explanation,
+        saferRewrite: analysis.saferRewrite,
+        sources: analysis.sources,
+      });
       await recordAudit("Claim checked", `${analysis.product}: ${analysis.riskLevel} risk (${analysis.riskScore}/100)${usedClientFallback ? " [local]" : ""}`);
+      void refreshUsage();
     } catch (analysisError) {
       setError(analysisError instanceof Error ? analysisError.message : "Analysis failed.");
     } finally {
@@ -1219,6 +1264,7 @@ function ClaimChecker() {
     setClaim(example.claim);
     setContext(example.context || "Website");
     setResult(null);
+    setCopilotPayload(null);
   };
 
   const updateStatus = async (status: ClaimStatus) => {
@@ -1268,8 +1314,11 @@ function ClaimChecker() {
   };
 
   return (
-    <AppShell title="Claim checker" subtitle="Analyze a claim for FDA and FTC risk flags before publishing. Validated across 100 product scenarios.">
-      <RegressionCoverageBadge />
+    <AppShell title="Claim checker" subtitle="Analyze a claim for FDA and FTC risk flags before publishing. Validated across 1000 product scenarios.">
+      <div className="mb-5 space-y-4">
+        <RegressionCoverageBadge />
+        <UsageMeter usage={usage} />
+      </div>
       <div className="mt-5 grid gap-6 lg:grid-cols-2">
         <section className="surface p-5 sm:p-7">
           {error && <Notice text={error} />}
@@ -1309,7 +1358,7 @@ function ClaimChecker() {
                   <strong>Label disclaimer checker:</strong> This claim may need a supplement disclaimer before publishing.
                 </div>
               )}
-              <AnalysisResult result={result} copied={copied} onCopy={copyRewrite} onStatus={updateStatus} onTask={createTask} />
+              <AnalysisResult result={result} copied={copied} onCopy={copyRewrite} onStatus={updateStatus} onTask={createTask} copilotPayload={copilotPayload || undefined} />
             </div>
           ) : (
           <div className="grid min-h-96 place-items-center rounded-2xl border border-dashed border-black/10 bg-stone p-10 text-center">
@@ -1323,7 +1372,7 @@ function ClaimChecker() {
           {!result && <RiskPatternTips />}
           <div className="rounded-2xl bg-ink p-5 text-white">
             <p className="text-xs font-bold uppercase tracking-wider text-white/50">Resilient analysis</p>
-            <p className="mt-3 text-sm leading-6 text-white/80">ClaimGuard uses an inspectable rules engine with product category, ingredients, market, and publishing context. No AI API is required.</p>
+            <p className="mt-3 text-sm leading-6 text-white/80">ClaimGuard uses an inspectable rules engine with product category, ingredients, market, and publishing context. Plan limits are enforced server-side.</p>
             <p className="mt-4 border-t border-white/10 pt-4 text-xs leading-5 text-white/60">{fallbackDisclaimer}</p>
           </div>
         </aside>
@@ -1434,6 +1483,8 @@ function SavedClaims() {
 }
 
 function Regulations() {
+  const { products } = useProducts();
+  const { claims } = useClaims();
   const [updates, setUpdates] = useState<RegulationUpdate[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -1587,6 +1638,31 @@ function Regulations() {
               <button onClick={() => void updateStatus(update.id, "action_needed")} className="primary !py-2"><Zap size={15} />Action needed</button>
               <button onClick={() => void updateStatus(update.id, "dismissed")} className="secondary !py-2">Dismiss</button>
             </div>
+            <RegulationImpactExplainer
+              regulation={{
+                id: update.id,
+                organization: update.organization,
+                category: update.category,
+                title: update.title,
+                summary: update.summary,
+                officialUrl: update.officialUrl,
+              }}
+              products={products.map((item) => ({
+                id: item.id,
+                name: item.name,
+                category: item.category,
+                claims: item.claims,
+              }))}
+              claims={claims.map((item) => ({
+                id: item.id,
+                product: item.product,
+                originalClaim: item.originalClaim,
+                riskLevel: item.riskLevel,
+                riskyPhrases: item.riskyPhrases,
+                status: item.status,
+                date: item.date,
+              }))}
+            />
           </article>
         )) : <div className="surface"><Empty icon={Landmark} title="No regulation updates yet" text="Authenticated users will see published regulation updates here." /></div>}
       </div>
@@ -1660,28 +1736,38 @@ function ClaimLibrary() {
 
 function CopyScanner() {
   const { products } = useProducts();
+  const { usage, refresh: refreshUsage } = useUsage();
   const [productId, setProductId] = useState("");
   const [context, setContext] = useState("Website");
   const [copy, setCopy] = useState("");
   const [results, setResults] = useState<ClaimAnalysis[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
   const contexts = ["Website", "Amazon listing", "Instagram caption", "Influencer script", "Email campaign", "Label"];
   const selected = products.find((product) => product.id === productId);
 
-  const scan = () => {
+  const scan = async () => {
     setLoading(true);
-    const analyses = splitClaimLikeSentences(copy).map((claimText) => {
-      const analysis = analyzeClaim({
-        claimText,
-        productCategory: selected?.category || "Other",
-        ingredients: selected?.ingredients || [],
-        market: selected?.market || "United States FDA + FTC",
-        contextType: context === "Instagram caption" ? "Social media" : context === "Email campaign" ? "Ad copy" : context,
+    setError("");
+    try {
+      const contextType = context === "Instagram caption" ? "Social media" : context === "Email campaign" ? "Ad copy" : context;
+      const response = await fetch("/api/scan-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          copy,
+          productCategory: selected?.category || "Other",
+          ingredients: selected?.ingredients || [],
+          market: selected?.market || "United States FDA + FTC",
+          contextType,
+        }),
       });
-      return {
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Copy scan failed.");
+      const analyses = (body.analyses || []).map((analysis: any) => ({
         id: crypto.randomUUID(),
-        originalClaim: claimText,
+        originalClaim: analysis.originalClaim,
         context,
         product: selected?.name || "Unassigned",
         date: formatDate(new Date().toISOString()),
@@ -1694,12 +1780,17 @@ function CopyScanner() {
         sources: analysis.sourceReferences,
         disclaimer: analysis.disclaimer,
         status: analysis.riskLevel === "high" ? "Expert Review Needed" as const : "Needs Review" as const,
-        storage: "local" as const,
-      };
-    });
-    setResults(analyses);
-    setLoading(false);
-    void recordAudit("Copy scanned", `${analyses.length} claim-like sentences reviewed from ${context}`);
+        storage: "workspace" as const,
+      }));
+      setResults(analyses);
+      void refreshUsage();
+      void recordAudit("Copy scanned", `${analyses.length} claim-like sentences reviewed from ${context}`);
+    } catch (scanError) {
+      setError(scanError instanceof Error ? scanError.message : "Copy scan failed.");
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const save = async (result: ClaimAnalysis) => {
@@ -1713,6 +1804,7 @@ function CopyScanner() {
         ingredients: selected?.ingredients || [],
         market: selected?.market || "United States FDA + FTC",
         contextType: context === "Instagram caption" ? "Social media" : context === "Email campaign" ? "Ad copy" : context,
+        saveOnly: true,
       }),
     });
     const body = await response.json();
@@ -1727,7 +1819,9 @@ function CopyScanner() {
   };
 
   return (
-    <AppShell title="Copy Scanner" subtitle="Paste long-form marketing copy and review each claim-like sentence separately.">
+    <AppShell title="Copy Scanner" subtitle="Paste website, Amazon listing, social, or email copy — each sentence is checked against your plan limits.">
+      <div className="mb-5"><UsageMeter usage={usage} /></div>
+      {error && <Notice text={error} />}
       {message && <div className="mb-5 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{message}</div>}
       <section className="surface p-5 sm:p-7">
         <div className="grid gap-5 sm:grid-cols-2">
@@ -1735,7 +1829,7 @@ function CopyScanner() {
           <Field label="Copy source"><select className="input" value={context} onChange={(event) => setContext(event.target.value)}>{contexts.map((item) => <option key={item}>{item}</option>)}</select></Field>
         </div>
         <div className="mt-5"><Field label="Paste copy"><textarea value={copy} onChange={(event) => setCopy(event.target.value)} className="input min-h-64 resize-none leading-6" placeholder="Paste website, listing, social, email, influencer, or label copy..." /></Field></div>
-        <div className="mt-4 flex justify-end"><button onClick={scan} disabled={!copy.trim() || loading} className="primary">{loading ? <LoaderCircle size={16} className="animate-spin" /> : <ScanText size={16} />}Scan copy</button></div>
+        <div className="mt-4 flex justify-end"><button onClick={() => void scan()} disabled={!copy.trim() || loading} className="primary">{loading ? <LoaderCircle size={16} className="animate-spin" /> : <ScanText size={16} />}Scan copy</button></div>
       </section>
       <div className="mt-5 space-y-4">{results.map((result) => (
         <article key={result.id} className="surface p-5">
@@ -1795,6 +1889,7 @@ function ProductImpact() {
 }
 
 function TasksBoard() {
+  const { usage } = useUsage();
   const { tasks, setTasks, loading } = useTasks();
   const columns: TaskStatus[] = ["Needs Review", "Fixing", "Expert Review Needed", "Fixed", "Approved"];
   const move = async (task: WorkflowTask, status: TaskStatus) => {
@@ -1817,6 +1912,17 @@ function TasksBoard() {
     } else writeTaskFallback(next);
     await recordAudit("Task removed", `${task.product}: ${task.claimIssue}`);
   };
+  if (usage && !usage.limits.taskBoard) {
+    return (
+      <AppShell title="Task Board" subtitle="Workflow tasks are available on Guard and above.">
+        <div className="surface p-6">
+          <p className="text-sm leading-6 text-muted">Upgrade to Guard to turn risky claims into assigned remediation tasks with audit history.</p>
+          <Link href="/settings" className="primary mt-4 inline-flex"><Sparkles size={16} />Upgrade plan</Link>
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell title="Task Board" subtitle="Turn compliance risks into trackable fixes.">
       {loading ? <div className="surface p-8 text-sm text-muted">Loading tasks...</div> : <div className="flex gap-4 overflow-x-auto pb-4">{columns.map((column) => (
@@ -1860,6 +1966,7 @@ type SubscriptionSummary = {
 
 function BillingPanel({ email }: { email: string }) {
   const [subscription, setSubscription] = useState<SubscriptionSummary | null>(null);
+  const [usage, setUsage] = useState<ReturnType<typeof useUsage>["usage"]>(null);
   const [configured, setConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState("");
@@ -1871,6 +1978,7 @@ function BillingPanel({ email }: { email: string }) {
       const result = await response.json();
       setConfigured(Boolean(result.configured));
       setSubscription(result.subscription);
+      setUsage(result.usage || null);
       if (!result.configured) setBillingMessage("Add your Dodo Payments API key and product IDs to activate subscriptions.");
     } catch (error) {
       setBillingMessage(error instanceof Error ? error.message : "Could not load subscription details.");
@@ -1914,12 +2022,12 @@ function BillingPanel({ email }: { email: string }) {
     }
   };
 
-  const active = subscription?.status === "active";
+  const active = subscription?.status === "active" || subscription?.status === "trialing";
   return (
     <section className="surface p-6">
       <div className="flex items-start justify-between gap-4">
         <div><p className="text-xs font-bold uppercase tracking-[.16em] text-[#14a995]">Dodo Payments</p><h2 className="mt-2 font-bold">Subscription</h2></div>
-        <span className={`rounded-full px-3 py-1 text-xs font-bold ${active ? "bg-mint text-safe" : "bg-stone text-muted"}`}>{active ? "Active" : "Free"}</span>
+        <span className={`rounded-full px-3 py-1 text-xs font-bold ${active ? "bg-mint text-safe" : "bg-stone text-muted"}`}>{active ? (subscription?.status === "trialing" ? "Trial" : "Active") : "Free"}</span>
       </div>
       {loading ? <p className="mt-5 text-sm text-muted">Loading subscription...</p> : (
         <>
@@ -1929,6 +2037,7 @@ function BillingPanel({ email }: { email: string }) {
             {subscription?.product_id && <p className="mt-1 text-xs text-muted">{subscription.product_id}</p>}
             {subscription?.next_billing_date && <p className="mt-3 text-xs text-muted">{subscription.cancel_at_next_billing_date ? "Access ends" : "Renews"} {formatDate(subscription.next_billing_date)}</p>}
           </div>
+          {usage && <div className="mt-4"><UsageMeter usage={usage} /></div>}
           {billingMessage && <p className="mt-4 text-sm leading-6 text-muted">{billingMessage}</p>}
           <div className="mt-5 flex flex-wrap gap-2">
             <button onClick={() => void startCheckout("guard")} disabled={Boolean(checkoutLoading) || !configured} className="primary">{checkoutLoading === "growth_monthly" || checkoutLoading === "growth_annual" ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}Choose Guard — $39/mo</button>
@@ -2005,12 +2114,14 @@ function SettingsPage() {
           </div>
         </section>
         <BillingPanel email={profile.email} />
+        <FeedbackForm />
       </div>
     </AppShell>
   );
 }
 
 function Reports() {
+  const { usage } = useUsage();
   const { products } = useProducts();
   const { claims } = useClaims();
   const [productName, setProductName] = useState("");
@@ -2019,6 +2130,17 @@ function Reports() {
     void recordAudit("Report exported", productName || "All products");
     window.print();
   };
+  if (usage && !usage.limits.pdfExport) {
+    return (
+      <AppShell title="Reports" subtitle="PDF-style claim-risk reports are available on Guard and above.">
+        <div className="surface p-6">
+          <p className="text-sm leading-6 text-muted">Upgrade to Guard to export printable compliance reports for your team and consultants.</p>
+          <Link href="/settings" className="primary mt-4 inline-flex"><Sparkles size={16} />View plans</Link>
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell title="Reports" subtitle="Preview a clean, PDF-style claim-risk report for your team." action={<button onClick={exportReport} className="primary"><Printer size={16} />Export / Print</button>}>
       <div className="mb-5 max-w-sm"><Field label="Product"><select className="input" value={productName} onChange={(event) => setProductName(event.target.value)}><option value="">All products</option>{products.map((product) => <option key={product.id}>{product.name}</option>)}</select></Field></div>
@@ -2279,7 +2401,10 @@ function Landing() {
       <main>
         <section className="mx-auto grid min-h-[calc(100vh-64px)] max-w-7xl items-center gap-12 overflow-hidden px-5 py-16 sm:px-6 lg:grid-cols-[.92fr_1.08fr] lg:gap-8 lg:py-12 xl:gap-12">
           <div className="max-w-[620px]">
-            <span className="inline-flex items-center gap-2 rounded-full border border-black/[.08] bg-white px-3 py-1.5 text-xs font-medium text-muted shadow-sm"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#43dfc6]" /> AI-powered compliance for small brands</span>
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-2 rounded-full border border-black/[.08] bg-white px-3 py-1.5 text-xs font-medium text-muted shadow-sm"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#43dfc6]" /> Rules-engine compliance for small brands</span>
+              <BetaBadge />
+            </span>
             <h1 className="mt-6 text-[2.75rem] font-extrabold leading-[1.04] tracking-[-.055em] sm:text-[3.15rem] lg:text-[3.35rem] xl:text-[3.75rem]">Compliance monitoring for brands that <span className="figma-accent">cannot afford surprises.</span></h1>
             <p className="mt-6 max-w-[640px] text-base leading-7 text-muted sm:text-lg sm:leading-8">ClaimGuard watches regulation updates, checks risky product claims, and shows exactly what to fix before your food, supplement, or wellness brand gets into trouble.</p>
             <div className="mt-6 rounded-2xl border border-black/[.08] bg-white p-2 shadow-[0_16px_38px_rgba(16,24,45,.08)]">
@@ -2412,7 +2537,7 @@ function Landing() {
               <div className="motion-card surface p-6">
                 <span className="grid h-10 w-10 place-items-center rounded-xl bg-violet-50 text-violet-600"><ScanText size={18} /></span>
                 <h3 className="mt-5 font-bold">Copy scanner</h3>
-                <p className="mt-2 text-sm leading-6 text-muted">Split campaigns and listings into reviewable claims.</p>
+                <p className="mt-2 text-sm leading-6 text-muted">Paste website, Amazon, social, or email copy — each sentence is checked against FDA/FTC rules.</p>
               </div>
               <div className="motion-card surface p-6">
                 <span className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600"><FileText size={18} /></span>
@@ -2460,7 +2585,7 @@ function Landing() {
             <div className="grid gap-3 sm:grid-cols-2">
               {[
                 ["Product labels", "Review structure/function wording before packaging is finalized."],
-                ["Websites and Amazon", "Check headlines, bullets, product descriptions, and benefit claims."],
+                ["Website and Amazon copy", "Paste headlines, bullets, descriptions, and benefit claims — no URL crawling required."],
                 ["Paid ads and social", "Catch absolute promises before campaigns go live."],
                 ["Influencer scripts", "Give creators clearer, safer language to work from."],
               ].map(([title, text]) => (
@@ -2529,7 +2654,10 @@ function Landing() {
         <section id="pricing" className="bg-white px-5 py-20 sm:px-8 lg:py-28">
           <div className="mx-auto max-w-7xl">
             <div className="mx-auto max-w-2xl text-center">
-              <p className="text-xs font-bold uppercase tracking-[.18em] text-[#14a995]">Transparent pricing under $100/mo</p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <p className="text-xs font-bold uppercase tracking-[.18em] text-[#14a995]">Transparent pricing under $100/mo</p>
+                <BetaBadge />
+              </div>
               <h2 className="mt-4 text-3xl font-extrabold tracking-[-.04em] sm:text-4xl">Consultants charge $300/hr. ClaimGuard starts at $39/mo.</h2>
               <p className="mt-4 text-sm leading-7 text-muted">{PRICE_ANCHOR_COPY} Plans are locally priced for your market.</p>
               {pricingRegion === "US" && <p className="mt-3 rounded-full bg-mint px-4 py-2 text-xs font-semibold text-safe">{FOUNDING_OFFER_COPY}</p>}
@@ -2778,6 +2906,6 @@ export default function Page() {
   if (path === "/reports") return <Reports />;
   if (path === "/terms") return <LegalPage title="Terms of Service" text={["ClaimGuard is provided for internal marketing review support.", "You are responsible for the accuracy, substantiation, and legality of every published claim.", "ClaimGuard does not provide legal advice and should not be treated as a substitute for professional review."]} />;
   if (path === "/privacy") return <LegalPage title="Privacy Policy" text={["ClaimGuard stores account, product, and claim-analysis data in Supabase under your workspace account.", "Claim analysis uses a deterministic rules engine and does not send claim text to an AI API.", "You should avoid submitting sensitive personal, medical, or regulated customer data unless your internal policies allow it."]} />;
-  if (path === "/disclaimer") return <LegalPage title="Disclaimer" text={["ClaimGuard provides AI-assisted risk flags and educational guidance. It is not legal advice.", "Always consult a qualified compliance professional before publishing high-risk claims or health-related advertising.", "Deterministic fallback analysis is phrase-based and may miss important context, substantiation issues, or jurisdiction-specific rules."]} />;
+  if (path === "/disclaimer") return <LegalPage title="Disclaimer" text={[CLAIM_DISCLAIMER, "Always consult a qualified compliance professional before publishing high-risk claims or health-related advertising.", "The rules engine is phrase-based and may miss important context, substantiation issues, or jurisdiction-specific rules."]} />;
   return <Landing />;
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { analyzeClaim } from "@/lib/analyzeClaim";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { assertCanScan, getUsageSnapshot, incrementClaimScans } from "@/lib/usage";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
 const contextTypes = ["Label", "Website", "Amazon listing", "Ad copy", "Social media", "Influencer script"] as const;
@@ -12,6 +13,7 @@ const inputSchema = z.object({
   ingredients: z.array(z.string().trim().min(1).max(200)).max(200),
   market: z.string().trim().min(1).max(200),
   contextType: z.enum(contextTypes),
+  saveOnly: z.boolean().optional(),
 });
 
 function responseRow(input: z.infer<typeof inputSchema>, analysis: ReturnType<typeof analyzeClaim>) {
@@ -45,8 +47,16 @@ export async function POST(request: Request) {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    const limit = checkRateLimit(user.id, Number(process.env.ANALYSIS_RATE_LIMIT || 20));
-    if (!limit.allowed) return NextResponse.json({ error: "Too many analyses. Please try again shortly." }, { status: 429 });
+
+    const burst = checkRateLimit(`${user.id}:burst`, Number(process.env.ANALYSIS_RATE_LIMIT || 40), 60_000);
+    if (!burst.allowed) return NextResponse.json({ error: "Too many analyses. Please try again shortly." }, { status: 429 });
+
+    if (!input.saveOnly) {
+      const gate = await assertCanScan(user.id, 1);
+      if (!gate.allowed) {
+        return NextResponse.json({ error: gate.message, usage: gate.snapshot, upgradeRequired: true }, { status: 402 });
+      }
+    }
 
     if (input.productId) {
       const { data: product } = await supabase
@@ -80,8 +90,21 @@ export async function POST(request: Request) {
       sources: row.sources,
       status: row.status,
     }).select().single();
-    if (error) return NextResponse.json({ analysis: row, provider: "rules", saved: false, warning: "Analysis completed but Supabase could not save it." });
-    return NextResponse.json({ analysis: data, provider: "rules", saved: true, remaining: limit.remaining });
+
+    if (!input.saveOnly) await incrementClaimScans(user.id, 1);
+    const usage = await getUsageSnapshot(user.id);
+
+    if (error) {
+      return NextResponse.json({
+        analysis: row,
+        provider: "rules",
+        saved: false,
+        warning: "Analysis completed but Supabase could not save it.",
+        usage,
+      });
+    }
+
+    return NextResponse.json({ analysis: data, provider: "rules", saved: true, usage });
   } catch {
     return NextResponse.json({ error: "Unable to analyze this claim right now." }, { status: 500 });
   }

@@ -9,7 +9,7 @@ ClaimGuard is a compliance-review workspace for food, supplement, and wellness b
 - FDA, FTC, and FSSAI regulation update tracking
 - Claim library, task board, audit trail, and reports
 - Supabase authentication, database storage, and row-level security
-- RevenueCat Web Billing with localized currencies and entitlements
+- Dodo Payments checkout, subscriptions, and customer portal
 - Curated multi-market regulatory library covering major consumer-product sectors
 - Responsive landing page with light, dark, and high-contrast themes
 
@@ -18,7 +18,7 @@ ClaimGuard is a compliance-review workspace for food, supplement, and wellness b
 - Next.js 15 and React 19
 - TypeScript and Tailwind CSS
 - Supabase Auth and PostgreSQL
-- RevenueCat Web Billing
+- Dodo Payments
 - Vercel-ready deployment
 
 ## Local Setup
@@ -48,8 +48,14 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 ANALYSIS_RATE_LIMIT=20
-NEXT_PUBLIC_REVENUECAT_WEB_API_KEY=
-NEXT_PUBLIC_REVENUECAT_ENTITLEMENT_ID=pro
+DODO_PAYMENTS_API_KEY=
+DODO_PAYMENTS_WEBHOOK_KEY=
+DODO_PAYMENTS_ENVIRONMENT=test_mode
+DODO_PAYMENTS_RETURN_URL=http://localhost:3000/settings?billing=success
+DODO_GROWTH_MONTHLY_PRODUCT_ID=
+DODO_GROWTH_ANNUAL_PRODUCT_ID=
+DODO_TEAM_MONTHLY_PRODUCT_ID=
+DODO_TEAM_ANNUAL_PRODUCT_ID=
 ```
 
 Never commit `.env.local` or the Supabase service-role key.
@@ -65,7 +71,7 @@ The regression suite validates 100 cross-sector product claims and high-risk rew
 
 ## Deployment
 
-See [`DEPLOYMENT.md`](DEPLOYMENT.md) for Supabase, RevenueCat, and Vercel setup.
+See [`DEPLOYMENT.md`](DEPLOYMENT.md) for Supabase, Dodo Payments, and Vercel setup.
 
 See [`REGULATORY_COVERAGE.md`](REGULATORY_COVERAGE.md) for the source methodology, covered sectors, and limitations.
 

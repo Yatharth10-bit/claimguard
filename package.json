@@ -3,12 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3002",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "test:claims": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/claim-regression.ps1",
-    "test:products": "tsx scripts/run-product-regression.ts"
+    "test:products": "tsx scripts/run-product-regression.ts",
+    "test:expanded": "tsx scripts/run-expanded-regression.ts",
+    "train:copilot": "tsx scripts/train-copilot-model.ts",
+    "test:plans": "tsx scripts/test-plan-limits.ts"
   },
   "dependencies": {
     "@dodopayments/nextjs": "^0.3.6",

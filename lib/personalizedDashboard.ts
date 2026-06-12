@@ -1,5 +1,6 @@
 import { analyzeClaim } from "@/lib/analyzeClaim";
 import type { BrandComplianceProfile } from "@/lib/brandProfile";
+import { REGULATORY_SOURCES } from "@/lib/regulatorySources";
 import { channelToContextType, regionToMarket, sectorToProductCategory } from "@/lib/sectorMapping";
 
 export type RiskCard = {
@@ -95,43 +96,49 @@ export function getSectorRiskCards(profile: BrandComplianceProfile): RiskCard[] 
   });
 }
 
-/** Placeholder feed — replace with real regulation API when available. */
-export function getPersonalizedRegulationFeed(profile: BrandComplianceProfile): RegulationFeedItem[] {
-  const items: RegulationFeedItem[] = [];
-  const { salesRegions, salesChannels, sector } = profile;
+const REGION_COUNTRY: Record<string, string> = {
+  "United States": "United States",
+  India: "India",
+  "European Union": "European Union",
+  "United Kingdom": "United Kingdom",
+  Canada: "Canada",
+  Australia: "Australia",
+};
 
-  if (salesRegions.includes("India")) {
-    items.push(
-      { id: "fssai-label", organization: "FSSAI", title: "Labeling and disclaimer reminders for health supplements", summary: "Review structure/function wording and mandatory disclaimers on Indian labels.", tag: "India" },
-      { id: "fssai-claims", organization: "FSSAI", title: "Permitted vs prohibited product claims", summary: "Avoid disease-treatment language on food and supplement marketing in India.", tag: "India" },
-    );
-  }
-  if (salesRegions.includes("United States")) {
-    items.push(
-      { id: "fda-sf", organization: "FDA", title: "Structure/function claim guidance", summary: "Use qualified support language instead of disease treatment claims.", tag: "United States" },
-      { id: "ftc-ads", organization: "FTC", title: "Advertising substantiation reminders", summary: "Ensure objective claims in ads and listings are truthful and substantiated.", tag: "United States" },
-    );
-  }
-  if (salesRegions.includes("European Union")) {
-    items.push(
-      { id: "eu-health", organization: "EFSA / EU", title: "EU health claim authorization", summary: "Only use authorized health claims on food and supplement products in the EU.", tag: "European Union" },
-      { id: "eu-cosmetics", organization: "EU Cosmetics", title: "Cosmetic claim restrictions", summary: "Avoid medicinal claims on skincare and beauty product copy.", tag: "European Union" },
-    );
-  }
-  if (salesRegions.includes("United Kingdom")) {
-    items.push({ id: "uk-claims", organization: "UK FSA / ASA", title: "UK food and supplement advertising rules", summary: "Review health claims against UK nutrition and health claims regulations.", tag: "United Kingdom" });
-  }
-  if (salesChannels.includes("Amazon")) {
-    items.push({ id: "amazon-policy", organization: "Amazon", title: "Listing policy: prohibited supplement claims", summary: "Remove cure, treat, and prevent language from titles, bullets, and images.", tag: "Amazon" });
-  }
-  if (sector === "Skincare / Cosmetics") {
-    items.push({ id: "beauty-ads", organization: "ASA / FTC", title: "Before/after and efficacy claims in beauty ads", summary: "Substantiate visible results claims and avoid implying medical outcomes.", tag: sector });
+export function getPersonalizedRegulationFeed(profile: BrandComplianceProfile): RegulationFeedItem[] {
+  const regions = profile.salesRegions.length ? profile.salesRegions : ["United States"];
+  const countries = new Set(regions.map((region) => REGION_COUNTRY[region] || region));
+
+  const items = REGULATORY_SOURCES
+    .filter((source) => countries.has(source.country))
+    .sort((a, b) => Number(b.liveSync) - Number(a.liveSync))
+    .slice(0, 5)
+    .map((source) => ({
+      id: source.id,
+      organization: source.organization,
+      title: source.title,
+      summary: source.summary,
+      tag: source.country,
+    }));
+
+  if (profile.salesChannels.includes("Amazon") || profile.salesChannels.includes("Other Marketplaces")) {
+    items.unshift({
+      id: "amazon-listing-review",
+      organization: "ClaimGuard",
+      title: "Review Amazon listing copy by pasting bullets into Copy Scanner",
+      summary: "Marketplace listings are treated as labeling extensions. Scan titles, bullets, and A+ content for risky phrases.",
+      tag: "Amazon",
+    });
   }
 
   if (!items.length) {
-    items.push(
-      { id: "general-1", organization: "ClaimGuard", title: "Complete your brand profile for tailored updates", summary: "Add sales regions and channels to see relevant regulatory reminders.", tag: "Getting started" },
-    );
+    items.push({
+      id: "general-1",
+      organization: "ClaimGuard",
+      title: "Complete your brand profile for tailored official-source guidance",
+      summary: "Add sales regions and channels to prioritize relevant regulator references.",
+      tag: "Getting started",
+    });
   }
 
   return items.slice(0, 6);

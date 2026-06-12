@@ -28,6 +28,8 @@ export const PRICING_REGIONS: Record<PricingRegionCode, PricingRegion> = {
 };
 
 export const ANNUAL_DISCOUNT = 0.2;
+export const TRIAL_DAYS = 7;
+export const TRIAL_CTA = `Start ${TRIAL_DAYS}-day trial`;
 
 export type PaidBillingTier = "guard" | "shield";
 
@@ -53,8 +55,8 @@ export const PRICING_PLANS = [
     name: "Guard",
     subtitle: "Starter",
     description: "For founders publishing their first compliant copy.",
-    features: ["3 products", "30 claim checks / month", "Website + Amazon scanning", "Disclaimer checker", "PDF export"],
-    cta: "Start 14-day trial",
+    features: ["3 products", "30 claim checks / month", "Paste-based copy scanner (website + Amazon)", "Task board + PDF export", "Disclaimer checker"],
+    cta: TRIAL_CTA,
     href: "/signup?next=%2Fsettings",
     highlighted: false,
     paidTier: "guard" as PaidBillingTier,
@@ -64,8 +66,8 @@ export const PRICING_PLANS = [
     name: "Shield",
     subtitle: "Pro",
     description: "For brands running a repeatable compliance workflow.",
-    features: ["15 products", "Unlimited claim checks", "Regulation feed + digest", "Task board + audit trail", "Evidence panel"],
-    cta: "Start 14-day trial",
+    features: ["15 products", "Unlimited claim checks", "Weekly digest + regulation feed", "SOP generator + compliance copilot", "Task board + audit trail"],
+    cta: TRIAL_CTA,
     href: "/signup?next=%2Fsettings",
     highlighted: true,
     paidTier: "shield" as PaidBillingTier,

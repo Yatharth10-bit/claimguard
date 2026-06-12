@@ -109,7 +109,6 @@ export async function loadBrandProfile(userId?: string | null): Promise<BrandCom
     return local;
   }
 
-  // TODO: migrate to dedicated brand_compliance_profiles table when backend is ready.
   const { data } = await supabase
     .from("profiles")
     .select("brand_compliance_profile")
@@ -141,7 +140,6 @@ export async function saveBrandProfile(
   const supabase = getSupabaseBrowser();
   if (!supabase || !id || !isSupabaseConfigured()) return;
 
-  // TODO: persist to backend — requires brand_compliance_profile jsonb column on profiles.
   await supabase
     .from("profiles")
     .update({ brand_compliance_profile: payload })
