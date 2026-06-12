@@ -1357,7 +1357,13 @@ function Regulations() {
     const load = async () => {
       const supabase = getSupabaseBrowser();
       if (!supabase) {
-        const developmentUpdates = useDevelopmentFallback ? readFallback("claimguard-regulation-statuses", demoRegulations) : [];
+        const storedDevelopmentUpdates = useDevelopmentFallback ? readFallback<RegulationUpdate[]>("claimguard-regulation-statuses", demoRegulations) : [];
+        const storedStatuses = new Map(storedDevelopmentUpdates.map((update) => [update.officialUrl, { status: update.status, notes: update.notes }]));
+        const developmentUpdates = useDevelopmentFallback ? demoRegulations.map((update) => ({
+          ...update,
+          status: storedStatuses.get(update.officialUrl)?.status || update.status,
+          notes: storedStatuses.get(update.officialUrl)?.notes || update.notes,
+        })) : [];
         const localUpdates = readRegulationFallback();
         setUpdates([...localUpdates, ...developmentUpdates.filter((update) => !localUpdates.some((local) => local.officialUrl === update.officialUrl))]);
         setError(useDevelopmentFallback ? "Supabase is not configured. Using development localStorage." : "Supabase is not configured.");
