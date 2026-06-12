@@ -10,10 +10,15 @@ import {
   Upload, WandSparkles, AlertTriangle, CalendarDays, ChevronDown, Printer, ScanText,
   UserRound, X, Zap, Sun, Moon, Contrast, Globe2
 } from "lucide-react";
+import { CheckFirstClaimCTA } from "@/components/landing/CheckFirstClaimCTA";
+import { PersonalizedDashboardHeader, PersonalizedDashboardSections } from "@/components/dashboard/PersonalizedDashboardLayer";
+import { BrandProfileSettings } from "@/components/onboarding/BrandProfileSettings";
+import { OnboardingPage } from "@/components/onboarding/OnboardingPage";
+import { useBrandProfile } from "@/hooks/useBrandProfile";
+import { BRAND_ONBOARDING_ENABLED, isOnboardingComplete, loadBrandProfile } from "@/lib/brandProfile";
 import { getSupabaseBrowser, isSupabaseConfigured } from "@/lib/supabase/client";
 import { analyzeClaim } from "@/lib/analyzeClaim";
 import { calculateProductRisk, matchRegulationImpacts, needsSupplementDisclaimer, splitClaimLikeSentences } from "@/lib/workflow";
-import { getRevenueCat, isRevenueCatConfigured, revenueCatEntitlement, summarizeSubscription } from "@/lib/revenuecat";
 import { MARKET_OPTIONS, PRODUCT_CATEGORIES } from "@/lib/complianceData";
 import { REGULATORY_SOURCES } from "@/lib/regulatorySources";
 
@@ -650,8 +655,10 @@ function useAudit() {
 }
 
 function Dashboard() {
+  const router = useRouter();
   const { products, loading: productsLoading, error: productsError } = useProducts();
   const { claims, loading: claimsLoading, error: claimsError } = useClaims();
+  const { profile, loading: profileLoading, isComplete, enabled: onboardingEnabled } = useBrandProfile();
   const loading = productsLoading || claimsLoading;
   const counts = useMemo(() => ({
     products: products.length,
@@ -660,8 +667,22 @@ function Dashboard() {
     low: claims.filter((claim) => claim.riskLevel === "low").length,
   }), [claims, products]);
 
+  useEffect(() => {
+    if (!onboardingEnabled || profileLoading) return;
+    if (!isComplete) router.replace("/onboarding");
+  }, [onboardingEnabled, profileLoading, isComplete, router]);
+
+  const personalizedHeader = onboardingEnabled && isComplete && profile
+    ? PersonalizedDashboardHeader({ profile })
+    : null;
+
   return (
-    <AppShell title="Compliance snapshot" subtitle="Here is what needs your attention today." action={<Link href="/claim-checker" className="primary"><Sparkles size={17} /> Check a claim</Link>}>
+    <AppShell
+      title={personalizedHeader?.title || "Compliance snapshot"}
+      subtitle={personalizedHeader?.subtitle || "Here is what needs your attention today."}
+      action={<Link href="/claim-checker" className="primary"><Sparkles size={17} /> Check a claim</Link>}
+    >
+      {onboardingEnabled && isComplete && profile && <PersonalizedDashboardSections profile={profile} />}
       {(productsError || claimsError) && <Notice text={productsError || claimsError} />}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <Metric label="Products monitored" value={loading ? "..." : String(counts.products)} icon={Package} tone="bg-blue-50 text-blue-500" note="In your workspace" />
@@ -1754,33 +1775,28 @@ function AuditTimeline() {
   );
 }
 
-type SubscriptionSummary = ReturnType<typeof summarizeSubscription>;
+type SubscriptionSummary = {
+  plan: string;
+  product_id: string;
+  status: string;
+  next_billing_date: string | null;
+  cancel_at_next_billing_date: boolean;
+};
 
 function BillingPanel({ email }: { email: string }) {
   const [subscription, setSubscription] = useState<SubscriptionSummary | null>(null);
+  const [configured, setConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState("");
   const [billingMessage, setBillingMessage] = useState("");
 
   const loadSubscription = async () => {
-    if (!isRevenueCatConfigured()) {
-      setBillingMessage("Add your RevenueCat public Web Billing API key to activate subscriptions.");
-      setLoading(false);
-      return;
-    }
-    const supabase = getSupabaseBrowser();
-    const { data: { user } } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
-    const fallbackUser = readFallback<{ email?: string }>("claimguard-dev-user", {});
-    const appUserId = user?.id || fallbackUser.email;
-    if (!appUserId) {
-      setBillingMessage("Log in to view and manage your subscription.");
-      setLoading(false);
-      return;
-    }
     try {
-      const purchases = await getRevenueCat(appUserId, user?.email || email);
-      setSubscription(summarizeSubscription(await purchases.getCustomerInfo()));
-      setBillingMessage("");
+      const response = await fetch("/api/billing/status");
+      const result = await response.json();
+      setConfigured(Boolean(result.configured));
+      setSubscription(result.subscription);
+      if (!result.configured) setBillingMessage("Add your Dodo Payments API key and product IDs to activate subscriptions.");
     } catch (error) {
       setBillingMessage(error instanceof Error ? error.message : "Could not load subscription details.");
     } finally {
@@ -1792,50 +1808,59 @@ function BillingPanel({ email }: { email: string }) {
     void loadSubscription();
   }, [email]);
 
-  const showPlans = async () => {
-    setCheckoutLoading(true);
+  const startCheckout = async (tier: "growth" | "team") => {
+    const billingCycle = localStorage.getItem("claimguard-billing-cycle") === "annual" ? "annual" : "monthly";
+    const plan = `${tier}_${billingCycle}`;
+    setCheckoutLoading(plan);
     setBillingMessage("");
     try {
-      const supabase = getSupabaseBrowser();
-      const { data: { user } } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
-      const fallbackUser = readFallback<{ email?: string }>("claimguard-dev-user", {});
-      const appUserId = user?.id || fallbackUser.email;
-      if (!appUserId) throw new Error("Log in before selecting a paid plan.");
-      const purchases = await getRevenueCat(appUserId, user?.email || email);
-      const storedRegion = localStorage.getItem("claimguard-pricing-region");
-      const currency = storedRegion && storedRegion in pricingRegions ? pricingRegions[storedRegion as PricingRegion].currency : undefined;
-      const offerings = await purchases.getOfferings(currency ? { currency } : undefined);
-      if (!offerings.current) throw new Error("Add a current Offering in RevenueCat before opening checkout.");
-      const result = await purchases.presentPaywall({ offering: offerings.current, customerEmail: user?.email || email, showDiscountCodeField: true });
-      setSubscription(summarizeSubscription(result.customerInfo));
-      setBillingMessage("Your subscription is active and your workspace has been updated.");
-      await recordAudit("Subscription updated", `RevenueCat entitlement: ${revenueCatEntitlement}`);
+      const response = await fetch("/api/billing/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not create checkout.");
+      window.location.assign(result.checkoutUrl);
     } catch (error) {
       setBillingMessage(error instanceof Error ? error.message : "Could not open the subscription checkout.");
     } finally {
-      setCheckoutLoading(false);
+      setCheckoutLoading("");
     }
   };
 
+  const openPortal = async () => {
+    setCheckoutLoading("portal");
+    try {
+      const response = await fetch("/api/billing/portal", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not open billing portal.");
+      window.location.assign(result.portalUrl);
+    } catch (error) {
+      setBillingMessage(error instanceof Error ? error.message : "Could not open billing portal.");
+    } finally {
+      setCheckoutLoading("");
+    }
+  };
+
+  const active = subscription?.status === "active";
   return (
     <section className="surface p-6">
       <div className="flex items-start justify-between gap-4">
-        <div><p className="text-xs font-bold uppercase tracking-[.16em] text-[#14a995]">RevenueCat billing</p><h2 className="mt-2 font-bold">Subscription</h2></div>
-        <span className={`rounded-full px-3 py-1 text-xs font-bold ${subscription?.active ? "bg-mint text-safe" : "bg-stone text-muted"}`}>{subscription?.active ? "Active" : "Free"}</span>
+        <div><p className="text-xs font-bold uppercase tracking-[.16em] text-[#14a995]">Dodo Payments</p><h2 className="mt-2 font-bold">Subscription</h2></div>
+        <span className={`rounded-full px-3 py-1 text-xs font-bold ${active ? "bg-mint text-safe" : "bg-stone text-muted"}`}>{active ? "Active" : "Free"}</span>
       </div>
       {loading ? <p className="mt-5 text-sm text-muted">Loading subscription...</p> : (
         <>
           <div className="mt-5 rounded-xl bg-stone p-4">
             <p className="text-xs text-muted">Current access</p>
-            <p className="mt-1 text-lg font-extrabold capitalize">{subscription?.active ? subscription.entitlement : "Starter"}</p>
-            {subscription?.product && <p className="mt-1 text-xs text-muted">{subscription.product}</p>}
-            {subscription?.expiresAt && <p className="mt-3 text-xs text-muted">{subscription.renews ? "Renews" : "Access ends"} {formatDate(subscription.expiresAt.toISOString())}</p>}
+            <p className="mt-1 text-lg font-extrabold capitalize">{active ? subscription.plan.replace("_", " ") : "Starter"}</p>
+            {subscription?.product_id && <p className="mt-1 text-xs text-muted">{subscription.product_id}</p>}
+            {subscription?.next_billing_date && <p className="mt-3 text-xs text-muted">{subscription.cancel_at_next_billing_date ? "Access ends" : "Renews"} {formatDate(subscription.next_billing_date)}</p>}
           </div>
           {billingMessage && <p className="mt-4 text-sm leading-6 text-muted">{billingMessage}</p>}
           <div className="mt-5 flex flex-wrap gap-2">
-            <button onClick={() => void showPlans()} disabled={checkoutLoading || !isRevenueCatConfigured()} className="primary">{checkoutLoading ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}{subscription?.active ? "View plans" : "Upgrade workspace"}</button>
-            {subscription?.managementUrl && <a href={subscription.managementUrl} target="_blank" rel="noreferrer" className="secondary">Manage billing <ExternalLink size={14} /></a>}
+            <button onClick={() => void startCheckout("growth")} disabled={Boolean(checkoutLoading) || !configured} className="primary">{checkoutLoading === "growth_monthly" || checkoutLoading === "growth_annual" ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}Choose Growth</button>
+            <button onClick={() => void startCheckout("team")} disabled={Boolean(checkoutLoading) || !configured} className="secondary">Choose Team</button>
+            {subscription && <button onClick={() => void openPortal()} disabled={Boolean(checkoutLoading)} className="secondary">Manage billing <ExternalLink size={14} /></button>}
           </div>
+          <p className="mt-4 text-xs text-muted">Checkout uses the monthly or annual preference selected on the pricing page. Signed in as {email || "your workspace account"}.</p>
         </>
       )}
     </section>
@@ -1882,6 +1907,7 @@ function SettingsPage() {
   return (
     <AppShell title="Settings" subtitle="Manage your workspace preferences and account details.">
       <div className="grid gap-5 lg:grid-cols-2">
+        <BrandProfileSettings />
         <section className="surface p-6">
           <h2 className="font-bold">Profile</h2>
           <div className="mt-5 space-y-4">
@@ -2205,7 +2231,7 @@ function Landing() {
               )}
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Link href="/signup" className="primary !rounded-full !px-6">Check Your First Claim <ArrowRight size={17} /></Link>
+              <CheckFirstClaimCTA />
               <Link href="/dashboard" className="secondary !rounded-full !px-6"><span className="grid h-5 w-5 place-items-center rounded-full bg-ink text-[9px] text-white">▶</span> View Product Demo</Link>
             </div>
             <p className="mt-5 text-xs font-medium text-slate-400">Built for small food, supplement, wellness, and DTC brands.</p>
@@ -2498,7 +2524,7 @@ function Landing() {
             <h2 className="relative mx-auto mt-6 max-w-2xl text-3xl font-extrabold tracking-[-.03em] sm:text-4xl">Stop guessing. Catch compliance risk before it becomes expensive.</h2>
             <p className="relative mx-auto mt-4 max-w-2xl text-sm leading-7 text-white/60">Start with one product and one claim. ClaimGuard will help your team build a clearer, more consistent review habit over time.</p>
             <div className="mt-7 flex flex-wrap justify-center gap-3">
-              <Link href="/signup" className="secondary relative !rounded-full !border-white !px-6">Check Your First Claim <ArrowRight size={17} /></Link>
+              <CheckFirstClaimCTA variant="secondary" />
               <Link href="/disclaimer" className="relative px-4 py-3 text-sm font-semibold text-white/60 hover:text-white">Read the disclaimer</Link>
             </div>
           </div>
@@ -2546,11 +2572,20 @@ function Auth({ signup = false }: { signup?: boolean }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
+  const resolvePostAuthPath = async () => {
+    const next = searchParams.get("next");
+    if (next) return next;
+    if (signup && BRAND_ONBOARDING_ENABLED) return "/onboarding";
+    if (!BRAND_ONBOARDING_ENABLED) return "/dashboard";
+    const profile = await loadBrandProfile();
+    return isOnboardingComplete(profile) ? "/dashboard" : "/onboarding";
+  };
+
   const handleSubmit = async () => {
     if (!isSupabaseConfigured()) {
       if (useDevelopmentFallback) {
         localStorage.setItem("claimguard-dev-user", JSON.stringify({ email, full_name: name }));
-        router.push(searchParams.get("next") || "/dashboard");
+        router.push(await resolvePostAuthPath());
         return;
       }
       setError("Add Supabase environment variables to enable authentication.");
@@ -2579,7 +2614,7 @@ function Auth({ signup = false }: { signup?: boolean }) {
         setError(signUpError.message);
       } else {
         if (data.session) {
-          router.push("/dashboard");
+          router.push(await resolvePostAuthPath());
           router.refresh();
         } else {
           setMessage("Account created. Check your inbox to confirm your email, then log in.");
@@ -2590,7 +2625,7 @@ function Auth({ signup = false }: { signup?: boolean }) {
       if (signInError) {
         setError(signInError.message);
       } else {
-        router.push(searchParams.get("next") || "/dashboard");
+        router.push(await resolvePostAuthPath());
         router.refresh();
       }
     }
@@ -2643,6 +2678,7 @@ export default function Page() {
   if (path === "/") return <Landing />;
   if (path === "/login") return <Auth />;
   if (path === "/signup") return <Auth signup />;
+  if (path === "/onboarding") return <OnboardingPage />;
   if (path === "/dashboard") return <Dashboard />;
   if (path === "/products") return <Products />;
   if (path === "/products/new" || path === "/products/add") return <AddProduct />;

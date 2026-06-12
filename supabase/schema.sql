@@ -5,8 +5,12 @@ create table if not exists public.profiles (
   email text,
   full_name text,
   company_name text,
+  brand_compliance_profile jsonb,
   created_at timestamptz not null default now()
 );
+
+-- Migration for existing deployments:
+-- alter table public.profiles add column if not exists brand_compliance_profile jsonb;
 
 create table if not exists public.products (
   id uuid primary key default gen_random_uuid(),
@@ -88,6 +92,21 @@ create table if not exists public.audit_events (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.billing_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  customer_id text not null,
+  subscription_id text not null unique,
+  product_id text not null,
+  plan text not null,
+  status text not null default 'pending',
+  currency text,
+  next_billing_date timestamptz,
+  cancel_at_next_billing_date boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -132,6 +151,10 @@ drop trigger if exists set_tasks_updated_at on public.tasks;
 create trigger set_tasks_updated_at before update on public.tasks
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_billing_subscriptions_updated_at on public.billing_subscriptions;
+create trigger set_billing_subscriptions_updated_at before update on public.billing_subscriptions
+for each row execute function public.set_updated_at();
+
 create index if not exists products_user_id_idx on public.products(user_id);
 create index if not exists claims_user_id_created_at_idx on public.claims(user_id, created_at desc);
 create index if not exists claims_product_id_idx on public.claims(product_id);
@@ -140,6 +163,7 @@ create unique index if not exists regulation_updates_official_url_idx on public.
 create index if not exists user_regulation_status_user_id_idx on public.user_regulation_status(user_id);
 create index if not exists tasks_user_id_idx on public.tasks(user_id);
 create index if not exists audit_events_user_id_created_at_idx on public.audit_events(user_id, created_at desc);
+create index if not exists billing_subscriptions_user_id_idx on public.billing_subscriptions(user_id);
 
 alter table public.profiles enable row level security;
 alter table public.products enable row level security;
@@ -148,6 +172,7 @@ alter table public.regulation_updates enable row level security;
 alter table public.user_regulation_status enable row level security;
 alter table public.tasks enable row level security;
 alter table public.audit_events enable row level security;
+alter table public.billing_subscriptions enable row level security;
 
 create policy "Users can read own profile" on public.profiles
 for select to authenticated using (auth.uid() = id);
@@ -189,3 +214,6 @@ create policy "Users can read own audit events" on public.audit_events
 for select to authenticated using (auth.uid() = user_id);
 create policy "Users can insert own audit events" on public.audit_events
 for insert to authenticated with check (auth.uid() = user_id);
+
+create policy "Users can read own billing subscriptions" on public.billing_subscriptions
+for select to authenticated using (auth.uid() = user_id);

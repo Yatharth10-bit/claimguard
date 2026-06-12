@@ -339,7 +339,10 @@ button, a { transition-duration: 180ms; }
   .figma-accent,
   .hero-dashboard,
   .floating-card,
-  .landing-motion::after { animation: none; }
+  .landing-motion::after,
+  .onboarding-card,
+  .onboarding-bg-left,
+  .onboarding-bg-right { animation: none; }
   .motion-reveal {
     opacity: 1;
     transform: none;
@@ -349,4 +352,68 @@ button, a { transition-duration: 180ms; }
   .cursor-glow,
   .cursor-dot { display: none; }
   .hero-dashboard-wrap { transform: none; }
+}
+
+/* Brand onboarding flashcards — reversible feature layer */
+.onboarding-shell { background: linear-gradient(180deg, #f7f8f4 0%, #eef5ff 100%); }
+.onboarding-card {
+  animation: onboarding-float 5s ease-in-out infinite;
+  will-change: transform;
+}
+.onboarding-enter-forward {
+  animation: onboarding-enter-forward .45s ease-out both, onboarding-float 5s ease-in-out .45s infinite;
+}
+.onboarding-enter-back {
+  animation: onboarding-enter-back .45s ease-out both, onboarding-float 5s ease-in-out .45s infinite;
+}
+.onboarding-bg-left,
+.onboarding-bg-right {
+  position: fixed;
+  top: 50%;
+  width: 220px;
+  height: 220px;
+  border-radius: 9999px;
+  pointer-events: none;
+  filter: blur(48px);
+  opacity: .55;
+  z-index: 0;
+}
+.onboarding-bg-left {
+  left: -40px;
+  background: radial-gradient(circle, rgba(36, 104, 201, .22), transparent 70%);
+  animation: onboarding-drift-left 12s ease-in-out infinite;
+}
+.onboarding-bg-right {
+  right: -40px;
+  background: radial-gradient(circle, rgba(20, 184, 166, .2), transparent 70%);
+  animation: onboarding-drift-right 14s ease-in-out infinite;
+}
+.onboarding-bg-left::after,
+.onboarding-bg-right::after {
+  content: "";
+  position: absolute;
+  inset: 20%;
+  border-radius: 9999px;
+  border: 1px solid rgba(16, 24, 45, .06);
+  opacity: .5;
+}
+@keyframes onboarding-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes onboarding-enter-forward {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes onboarding-enter-back {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes onboarding-drift-left {
+  0%, 100% { transform: translate(0, -50%); }
+  50% { transform: translate(24px, calc(-50% - 16px)); }
+}
+@keyframes onboarding-drift-right {
+  0%, 100% { transform: translate(0, -50%); }
+  50% { transform: translate(-20px, calc(-50% + 12px)); }
 }
