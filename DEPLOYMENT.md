@@ -6,19 +6,26 @@
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (optional, server-only; required to persist synced shared regulation updates)
 - `ANALYSIS_RATE_LIMIT` (optional, default: `20`)
-- `NEXT_PUBLIC_REVENUECAT_WEB_API_KEY` (RevenueCat Web Billing public API key)
-- `NEXT_PUBLIC_REVENUECAT_ENTITLEMENT_ID` (defaults to `pro`)
+- `DODO_PAYMENTS_API_KEY`
+- `DODO_PAYMENTS_WEBHOOK_KEY`
+- `DODO_PAYMENTS_ENVIRONMENT` (`test_mode` or `live_mode`)
+- `DODO_PAYMENTS_RETURN_URL`
+- `DODO_GROWTH_MONTHLY_PRODUCT_ID`
+- `DODO_GROWTH_ANNUAL_PRODUCT_ID`
+- `DODO_TEAM_MONTHLY_PRODUCT_ID`
+- `DODO_TEAM_ANNUAL_PRODUCT_ID`
 
-## RevenueCat Setup
+## Dodo Payments Setup
 
-1. Create a RevenueCat project and connect a Stripe account under Web Billing.
-2. Create the Growth and Team subscription products with monthly and annual prices.
-3. Attach the paid products to an entitlement with the identifier `pro`.
-4. Create a current Offering and attach a RevenueCat Paywall to it.
-5. Add the public Web Billing API key as `NEXT_PUBLIC_REVENUECAT_WEB_API_KEY`.
-6. Use the same Supabase user UUID as the RevenueCat App User ID. ClaimGuard does this automatically.
+1. Create Guard ($39/mo) and Shield ($99/mo) subscription products in Dodo Payments — stored as `DODO_GROWTH_*` (Guard) and `DODO_TEAM_*` (Shield) env vars.
+2. Copy each product ID into its matching environment variable.
+3. Create an API key under Developer > API Keys and add it as `DODO_PAYMENTS_API_KEY`.
+4. Create a webhook endpoint pointing to `https://YOUR_DOMAIN/api/webhooks/dodo`.
+5. Subscribe the webhook to subscription events and add its signing key as `DODO_PAYMENTS_WEBHOOK_KEY`.
+6. Run `supabase/dodo-billing.sql` in the Supabase SQL Editor to create `billing_subscriptions`.
+7. Use `test_mode` until checkout, subscription activation, and customer portal flows are verified.
 
-Paid-plan buttons send customers to account Settings, where RevenueCat displays checkout, reports active entitlement access, and provides the billing-management link.
+Paid-plan buttons create authenticated Dodo checkout sessions. Signed webhooks update subscription access in Supabase, and customers manage billing through Dodo's hosted portal.
 
 ## Supabase Setup
 

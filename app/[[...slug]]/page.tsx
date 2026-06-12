@@ -14,6 +14,16 @@ import { ClaimExamplePicker } from "@/components/claim-checker/ClaimExamplePicke
 import { RegressionCoverageBadge } from "@/components/claim-checker/RegressionCoverageBadge";
 import { RiskPatternTips } from "@/components/claim-checker/RiskPatternTips";
 import { CheckFirstClaimCTA } from "@/components/landing/CheckFirstClaimCTA";
+import {
+  BILLING_TIER_TO_DODO,
+  formatEnterpriseFrom,
+  formatPlanPrice,
+  FOUNDING_OFFER_COPY,
+  PRICE_ANCHOR_COPY,
+  PRICING_PLANS,
+  PRICING_REGIONS,
+  type PricingRegionCode,
+} from "@/lib/pricing";
 import { sectorToProductCategory, regionToMarket } from "@/lib/sectorMapping";
 import type { ClaimExample } from "@/lib/claimLearnings";
 import { PersonalizedDashboardHeader, PersonalizedDashboardSections } from "@/components/dashboard/PersonalizedDashboardLayer";
@@ -1873,9 +1883,9 @@ function BillingPanel({ email }: { email: string }) {
     void loadSubscription();
   }, [email]);
 
-  const startCheckout = async (tier: "growth" | "team") => {
+  const startCheckout = async (tier: "guard" | "shield") => {
     const billingCycle = localStorage.getItem("claimguard-billing-cycle") === "annual" ? "annual" : "monthly";
-    const plan = `${tier}_${billingCycle}`;
+    const plan = `${BILLING_TIER_TO_DODO[tier]}_${billingCycle}`;
     setCheckoutLoading(plan);
     setBillingMessage("");
     try {
@@ -1915,14 +1925,14 @@ function BillingPanel({ email }: { email: string }) {
         <>
           <div className="mt-5 rounded-xl bg-stone p-4">
             <p className="text-xs text-muted">Current access</p>
-            <p className="mt-1 text-lg font-extrabold capitalize">{active ? subscription.plan.replace("_", " ") : "Starter"}</p>
+            <p className="mt-1 text-lg font-extrabold capitalize">{active ? (subscription.plan.startsWith("growth") ? "Guard" : subscription.plan.startsWith("team") ? "Shield" : subscription.plan.replace("_", " ")) : "Radar (Free)"}</p>
             {subscription?.product_id && <p className="mt-1 text-xs text-muted">{subscription.product_id}</p>}
             {subscription?.next_billing_date && <p className="mt-3 text-xs text-muted">{subscription.cancel_at_next_billing_date ? "Access ends" : "Renews"} {formatDate(subscription.next_billing_date)}</p>}
           </div>
           {billingMessage && <p className="mt-4 text-sm leading-6 text-muted">{billingMessage}</p>}
           <div className="mt-5 flex flex-wrap gap-2">
-            <button onClick={() => void startCheckout("growth")} disabled={Boolean(checkoutLoading) || !configured} className="primary">{checkoutLoading === "growth_monthly" || checkoutLoading === "growth_annual" ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}Choose Growth</button>
-            <button onClick={() => void startCheckout("team")} disabled={Boolean(checkoutLoading) || !configured} className="secondary">Choose Team</button>
+            <button onClick={() => void startCheckout("guard")} disabled={Boolean(checkoutLoading) || !configured} className="primary">{checkoutLoading === "growth_monthly" || checkoutLoading === "growth_annual" ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}Choose Guard — $39/mo</button>
+            <button onClick={() => void startCheckout("shield")} disabled={Boolean(checkoutLoading) || !configured} className="secondary">Choose Shield — $99/mo</button>
             {subscription && <button onClick={() => void openPortal()} disabled={Boolean(checkoutLoading)} className="secondary">Manage billing <ExternalLink size={14} /></button>}
           </div>
           <p className="mt-4 text-xs text-muted">Checkout uses the monthly or annual preference selected on the pricing page. Signed in as {email || "your workspace account"}.</p>
@@ -2181,18 +2191,6 @@ function AnimatedRiskRing({ value, label, color }: { value: number; label: strin
   );
 }
 
-const pricingRegions = {
-  US: { country: "United States", currency: "USD", locale: "en-US", growth: 49, team: 129 },
-  IN: { country: "India", currency: "INR", locale: "en-IN", growth: 1499, team: 3999 },
-  GB: { country: "United Kingdom", currency: "GBP", locale: "en-GB", growth: 39, team: 99 },
-  EU: { country: "European Union", currency: "EUR", locale: "en-IE", growth: 45, team: 119 },
-  CA: { country: "Canada", currency: "CAD", locale: "en-CA", growth: 59, team: 159 },
-  AU: { country: "Australia", currency: "AUD", locale: "en-AU", growth: 69, team: 179 },
-  SG: { country: "Singapore", currency: "SGD", locale: "en-SG", growth: 59, team: 159 },
-  AE: { country: "United Arab Emirates", currency: "AED", locale: "en-AE", growth: 179, team: 469 },
-} as const;
-
-type PricingRegion = keyof typeof pricingRegions;
 type BillingCycle = "monthly" | "annual";
 
 function Landing() {
@@ -2201,7 +2199,7 @@ function Landing() {
   const [demoView, setDemoView] = useState<"products" | "risk" | "updates">("risk");
   const [theme, setTheme] = useState<"light" | "dark" | "contrast">("light");
   const [navCompact, setNavCompact] = useState(false);
-  const [pricingRegion, setPricingRegion] = useState<PricingRegion>("US");
+  const [pricingRegion, setPricingRegion] = useState<PricingRegionCode>("US");
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
 
   useEffect(() => {
@@ -2210,11 +2208,11 @@ function Landing() {
     const storedRegion = localStorage.getItem("claimguard-pricing-region");
     const storedBillingCycle = localStorage.getItem("claimguard-billing-cycle");
     if (storedBillingCycle === "monthly" || storedBillingCycle === "annual") setBillingCycle(storedBillingCycle);
-    if (storedRegion && storedRegion in pricingRegions) {
-      setPricingRegion(storedRegion as PricingRegion);
+    if (storedRegion && storedRegion in PRICING_REGIONS) {
+      setPricingRegion(storedRegion as PricingRegionCode);
     } else {
       const detectedRegion = navigator.language.split("-")[1]?.toUpperCase();
-      if (detectedRegion && detectedRegion in pricingRegions) setPricingRegion(detectedRegion as PricingRegion);
+      if (detectedRegion && detectedRegion in PRICING_REGIONS) setPricingRegion(detectedRegion as PricingRegionCode);
       else if (["AT", "BE", "CY", "DE", "EE", "ES", "FI", "FR", "GR", "HR", "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PT", "SI", "SK"].includes(detectedRegion)) setPricingRegion("EU");
     }
     const onScroll = () => setNavCompact(window.scrollY > 36);
@@ -2235,12 +2233,14 @@ function Landing() {
     localStorage.setItem("claimguard-billing-cycle", billingCycle);
   }, [billingCycle]);
 
-  const region = pricingRegions[pricingRegion];
-  const formatPrice = (price: number) => new Intl.NumberFormat(region.locale, {
-    style: "currency",
-    currency: region.currency,
-    maximumFractionDigits: 0,
-  }).format(billingCycle === "annual" ? Math.round(price * .8) : price);
+  const region = PRICING_REGIONS[pricingRegion];
+  const planPrice = (planId: string) => {
+    if (planId === "free") return new Intl.NumberFormat(region.locale, { style: "currency", currency: region.currency, maximumFractionDigits: 0 }).format(0);
+    if (planId === "guard") return formatPlanPrice(region.guard, region, billingCycle);
+    if (planId === "shield") return formatPlanPrice(region.shield, region, billingCycle);
+    if (planId === "agency") return formatPlanPrice(region.agency, region, billingCycle);
+    return "";
+  };
 
   const checkHeroClaim = () => {
     setHeroResult(analyzeClaim({
@@ -2528,12 +2528,17 @@ function Landing() {
         </section>
         <section id="pricing" className="bg-white px-5 py-20 sm:px-8 lg:py-28">
           <div className="mx-auto max-w-7xl">
-            <div className="mx-auto max-w-2xl text-center"><p className="text-xs font-bold uppercase tracking-[.18em] text-[#14a995]">Pricing that fits your market</p><h2 className="mt-4 text-3xl font-extrabold tracking-[-.04em] sm:text-4xl">Start small. Pay fairly as your team grows.</h2><p className="mt-4 text-sm leading-7 text-muted">Plans are locally priced for different markets, not simply converted from US dollars.</p></div>
+            <div className="mx-auto max-w-2xl text-center">
+              <p className="text-xs font-bold uppercase tracking-[.18em] text-[#14a995]">Transparent pricing under $100/mo</p>
+              <h2 className="mt-4 text-3xl font-extrabold tracking-[-.04em] sm:text-4xl">Consultants charge $300/hr. ClaimGuard starts at $39/mo.</h2>
+              <p className="mt-4 text-sm leading-7 text-muted">{PRICE_ANCHOR_COPY} Plans are locally priced for your market.</p>
+              {pricingRegion === "US" && <p className="mt-3 rounded-full bg-mint px-4 py-2 text-xs font-semibold text-safe">{FOUNDING_OFFER_COPY}</p>}
+            </div>
             <div className="mx-auto mt-8 flex max-w-3xl flex-col items-center justify-between gap-4 rounded-2xl border border-black/[.08] bg-stone p-3 sm:flex-row">
               <label className="relative flex w-full items-center gap-2 sm:w-auto">
                 <Globe2 className="pointer-events-none absolute left-3 text-[#14a995]" size={16} />
-                <select aria-label="Pricing country and currency" value={pricingRegion} onChange={(event) => setPricingRegion(event.target.value as PricingRegion)} className="w-full appearance-none rounded-xl border border-black/[.08] bg-white py-2.5 pl-10 pr-10 text-sm font-bold outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 sm:w-auto">
-                  {Object.entries(pricingRegions).map(([code, option]) => <option key={code} value={code}>{option.country} · {option.currency}</option>)}
+                <select aria-label="Pricing country and currency" value={pricingRegion} onChange={(event) => setPricingRegion(event.target.value as PricingRegionCode)} className="w-full appearance-none rounded-xl border border-black/[.08] bg-white py-2.5 pl-10 pr-10 text-sm font-bold outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 sm:w-auto">
+                  {Object.entries(PRICING_REGIONS).map(([code, option]) => <option key={code} value={code}>{option.country} · {option.currency}</option>)}
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-3 text-muted" size={14} />
               </label>
@@ -2545,25 +2550,38 @@ function Landing() {
                 ))}
               </div>
             </div>
-            <div className="mt-12 grid gap-5 lg:grid-cols-3">
-              {[
-                ["Starter", new Intl.NumberFormat(region.locale, { style: "currency", currency: region.currency, maximumFractionDigits: 0 }).format(0), "For trying your first claim reviews.", ["3 products", "20 claim checks / month", "Basic regulation feed"]],
-                ["Growth", formatPrice(region.growth), "For brands building a repeatable review workflow.", ["Unlimited claim checks", "Product impact matching", "Tasks and reports"]],
-                ["Team", formatPrice(region.team), "For growing teams that need shared oversight.", ["Everything in Growth", "5 team seats included", "Priority support"]],
-              ].map(([name, price, text, items]: any, index) => (
-                <div key={name} className={`rounded-2xl border p-7 ${index === 1 ? "border-ink bg-ink text-white shadow-xl" : "border-black/[.08] bg-stone"}`}>
-                  <p className={`text-xs font-bold uppercase tracking-[.16em] ${index === 1 ? "text-[#43dfc6]" : "text-muted"}`}>{name}</p>
-                  <p className="mt-5 text-4xl font-extrabold tracking-[-.05em]">{price}<span className={`text-sm font-medium ${index === 1 ? "text-white/45" : "text-muted"}`}> / month</span></p>
-                  {billingCycle === "annual" && index > 0 && <p className={`mt-2 text-xs font-semibold ${index === 1 ? "text-[#43dfc6]" : "text-safe"}`}>Billed annually · save 20%</p>}
-                  <p className={`mt-4 text-sm leading-7 ${index === 1 ? "text-white/60" : "text-muted"}`}>{text}</p>
-                  <div className="my-7 h-px bg-current opacity-10" />
-                  <div className="space-y-3">{items.map((item: string) => <p key={item} className="flex items-center gap-2 text-sm"><Check size={15} className={index === 1 ? "text-[#43dfc6]" : "text-safe"} />{item}</p>)}</div>
-                  <Link href={index === 0 ? "/signup" : "/signup?next=%2Fsettings"} className={`${index === 1 ? "secondary" : "primary"} mt-8 w-full`}>{index === 0 ? "Start free" : "Start 14-day trial"}</Link>
-                </div>
-              ))}
+            <div className="mt-12 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+              {PRICING_PLANS.map((plan) => {
+                const highlighted = plan.highlighted;
+                const price = planPrice(plan.id);
+                const showFounding = plan.id === "guard" && region.foundingGuard && pricingRegion === "US";
+                return (
+                  <div key={plan.id} className={`rounded-2xl border p-7 ${highlighted ? "border-ink bg-ink text-white shadow-xl" : "border-black/[.08] bg-stone"}`}>
+                    <p className={`text-xs font-bold uppercase tracking-[.16em] ${highlighted ? "text-[#43dfc6]" : "text-muted"}`}>{plan.name} · {plan.subtitle}</p>
+                    <p className="mt-5 text-4xl font-extrabold tracking-[-.05em]">
+                      {showFounding && (
+                        <span className={`mr-2 text-lg line-through ${highlighted ? "text-white/40" : "text-muted"}`}>
+                          {formatPlanPrice(region.guard, region, billingCycle)}
+                        </span>
+                      )}
+                      {showFounding ? formatPlanPrice(region.foundingGuard!, region, billingCycle) : price}
+                      <span className={`text-sm font-medium ${highlighted ? "text-white/45" : "text-muted"}`}> / month</span>
+                    </p>
+                    {showFounding && <p className={`mt-2 text-xs font-semibold ${highlighted ? "text-[#43dfc6]" : "text-safe"}`}>Founding price · locked for life</p>}
+                    {billingCycle === "annual" && plan.id !== "free" && <p className={`mt-2 text-xs font-semibold ${highlighted ? "text-[#43dfc6]" : "text-safe"}`}>Billed annually · save 20%</p>}
+                    <p className={`mt-4 text-sm leading-7 ${highlighted ? "text-white/60" : "text-muted"}`}>{plan.description}</p>
+                    <div className="my-7 h-px bg-current opacity-10" />
+                    <div className="space-y-3">{plan.features.map((item) => <p key={item} className="flex items-center gap-2 text-sm"><Check size={15} className={highlighted ? "text-[#43dfc6]" : "text-safe"} />{item}</p>)}</div>
+                    <Link href={plan.href} className={`${highlighted ? "secondary" : "primary"} mt-8 w-full`}>{plan.id === "agency" ? "Contact sales" : plan.cta}</Link>
+                  </div>
+                );
+              })}
             </div>
             <div className="mt-6 flex flex-col items-center justify-between gap-4 rounded-2xl border border-black/[.08] bg-stone px-6 py-5 text-center sm:flex-row sm:text-left">
-              <div><p className="text-sm font-bold">Enterprise and agency pricing</p><p className="mt-1 text-xs leading-6 text-muted">Custom claim volume, more seats, onboarding, and region-specific regulatory workflows.</p></div>
+              <div>
+                <p className="text-sm font-bold">Enterprise — {formatEnterpriseFrom(region)}</p>
+                <p className="mt-1 text-xs leading-6 text-muted">SSO, API access, FSSAI/EU compliance packs, custom SLAs, and dedicated onboarding for larger teams.</p>
+              </div>
               <Link href="/signup" className="secondary shrink-0">Contact sales <ArrowRight size={15} /></Link>
             </div>
           </div>
