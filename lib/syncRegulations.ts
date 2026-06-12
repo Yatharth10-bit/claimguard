@@ -12,7 +12,7 @@ export type SyncedRegulation = {
   status: string;
 };
 
-const OFFICIAL_HOSTS = new Set(["www.fda.gov", "www.ftc.gov", "fssai.gov.in", "www.fssai.gov.in"]);
+const OFFICIAL_HOSTS = new Set(REGULATORY_SOURCES.map((source) => new URL(source.url).hostname));
 
 function decodeHtml(value: string) {
   return value
@@ -75,6 +75,7 @@ async function fetchOfficialSource(source: RegulatorySource): Promise<SyncedRegu
 
 export async function syncRegulations() {
   const updates = await Promise.all(REGULATORY_SOURCES.map(async (source) => {
+    if (!source.liveSync) return seededFallback(source);
     try {
       return await fetchOfficialSource(source);
     } catch {

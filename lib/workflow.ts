@@ -1,3 +1,5 @@
+import { CATEGORY_TOPICS } from "@/lib/complianceData";
+
 export type WorkflowProduct = {
   id: string;
   name: string;
@@ -38,6 +40,19 @@ const topicTerms: Record<string, string[]> = {
   FDA: ["label", "supplement", "structure/function", "disease", "ingredient", "disclaimer"],
   FTC: ["advertising", "health", "claim", "substantiation", "testimonial", "endorsement"],
   FSSAI: ["food", "label", "safety", "ingredient", "claim"],
+  EPA: ["pesticide", "antimicrobial", "disinfect", "cleaner", "efficacy"],
+  USDA: ["organic", "food", "label", "certification"],
+  CPSC: ["children", "toy", "safety", "warning", "label"],
+  TTB: ["alcohol", "beverage", "advertising", "health claim"],
+  CFPB: ["financial", "credit", "mortgage", "debt", "advertising"],
+  "European Commission": ["food", "nutrition", "health claim", "cosmetic", "label"],
+  "GOV.UK": ["food", "nutrition", "health claim", "label"],
+  "Food Standards Agency": ["food", "supplement", "label", "safety"],
+  MHRA: ["medicine", "medical device", "therapeutic", "advertising"],
+  CFIA: ["food", "nutrition", "health claim", "label"],
+  "Health Canada": ["cosmetic", "supplement", "therapeutic", "label"],
+  TGA: ["therapeutic", "medicine", "medical device", "advertising"],
+  ACCC: ["environmental", "sustainable", "carbon", "advertising"],
 };
 
 export function splitClaimLikeSentences(copy: string) {
@@ -67,11 +82,11 @@ export function matchRegulationImpacts(
       .toLowerCase();
 
     for (const regulation of regulations) {
-      const terms = topicTerms[regulation.organization] || [];
+      const categoryTerms = CATEGORY_TOPICS[product.category] || CATEGORY_TOPICS.Other;
+      const terms = [...new Set([...(topicTerms[regulation.organization] || []), ...categoryTerms])];
       const matchedTerms = terms.filter((term) => searchable.includes(term));
-      const relevantByCategory =
-        (/supplement/i.test(product.category) && /supplement|label|claim/i.test(`${regulation.category} ${regulation.title}`))
-        || (/food|beverage/i.test(product.category) && /food|label|advertising/i.test(`${regulation.category} ${regulation.title}`));
+      const regulationText = `${regulation.category} ${regulation.title} ${regulation.summary}`.toLowerCase();
+      const relevantByCategory = categoryTerms.some((term) => regulationText.includes(term));
       const relevantClaims = productClaims.filter((claim) =>
         matchedTerms.some((term) => `${claim.originalClaim} ${claim.riskyPhrases.join(" ")}`.toLowerCase().includes(term)),
       );

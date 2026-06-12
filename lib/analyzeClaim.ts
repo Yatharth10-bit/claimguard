@@ -43,15 +43,15 @@ function saferRewrite(claimText: string) {
 }
 
 export function analyzeClaim(input: AnalyzeClaimInput): ClaimAnalysisResult {
-  const matches = matchClaimRules(input.claimText);
+  const matches = matchClaimRules(input.claimText, input.productCategory, input.market);
   const highMatches = matches.filter((rule) => rule.severity === "high");
   const mediumMatches = matches.filter((rule) => rule.severity === "medium");
   const contextModifier = /ad copy|social media|influencer script/i.test(input.contextType) ? 5 : 0;
-  const supplementModifier = /dietary supplement/i.test(input.productCategory) ? 4 : 0;
+  const regulatedCategoryModifier = /dietary supplement|drug|medical device|therapeutic|tobacco|alcohol|pesticide|children|financial|animal health/i.test(input.productCategory) ? 4 : 0;
   const ingredientModifier = input.ingredients.length === 0 ? 3 : 0;
   const marketModifier = /united states|fda|ftc|india|fssai/i.test(input.market) ? 0 : 4;
   const baseScore = highMatches.length ? 72 : mediumMatches.length ? 38 : 12;
-  const riskScore = Math.min(99, baseScore + highMatches.length * 7 + mediumMatches.length * 4 + contextModifier + supplementModifier + ingredientModifier + marketModifier);
+  const riskScore = Math.min(99, baseScore + highMatches.length * 7 + mediumMatches.length * 4 + contextModifier + regulatedCategoryModifier + ingredientModifier + marketModifier);
   const riskLevel = highMatches.length || riskScore >= 75 ? "high" : mediumMatches.length || riskScore >= 40 ? "medium" : "low";
   const uniqueExplanations = [...new Set(matches.map((rule) => rule.explanation))];
   const contextNote = `The claim was reviewed as ${input.contextType.toLowerCase()} for a ${input.productCategory.toLowerCase()} in ${input.market}.`;
@@ -72,7 +72,7 @@ export function analyzeClaim(input: AnalyzeClaimInput): ClaimAnalysisResult {
     riskyPhrases: [...new Set(matches.map((rule) => rule.displayPhrase || rule.phrase))],
     explanation,
     saferRewrite: saferRewrite(input.claimText),
-    sourceReferences: getSourceReferences(input),
+    sourceReferences: getSourceReferences({ ...input, matchedSourceIds: [...new Set(matches.flatMap((rule) => rule.sourceIds || []))] }),
     checklist,
     disclaimer: CLAIM_DISCLAIMER,
   };

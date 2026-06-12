@@ -10,6 +10,7 @@ ClaimGuard is a compliance-review workspace for food, supplement, and wellness b
 - Claim library, task board, audit trail, and reports
 - Supabase authentication, database storage, and row-level security
 - RevenueCat Web Billing with localized currencies and entitlements
+- Curated multi-market regulatory library covering major consumer-product sectors
 - Responsive landing page with light, dark, and high-contrast themes
 
 ## Tech Stack
@@ -60,13 +61,14 @@ npm run build
 npm run test:claims
 ```
 
-The regression suite validates 25 claim classifications and high-risk rewrite cases.
+The regression suite validates 100 cross-sector product claims and high-risk rewrite cases.
 
 ## Deployment
 
 See [`DEPLOYMENT.md`](DEPLOYMENT.md) for Supabase, RevenueCat, and Vercel setup.
 
+See [`REGULATORY_COVERAGE.md`](REGULATORY_COVERAGE.md) for the source methodology, covered sectors, and limitations.
+
 ## Disclaimer
 
 ClaimGuard provides educational compliance guidance and risk signals. It is not legal advice and is not a substitute for review by a qualified compliance professional.
-

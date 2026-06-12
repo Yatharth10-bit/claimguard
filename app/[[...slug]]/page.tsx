@@ -14,6 +14,8 @@ import { getSupabaseBrowser, isSupabaseConfigured } from "@/lib/supabase/client"
 import { analyzeClaim } from "@/lib/analyzeClaim";
 import { calculateProductRisk, matchRegulationImpacts, needsSupplementDisclaimer, splitClaimLikeSentences } from "@/lib/workflow";
 import { getRevenueCat, isRevenueCatConfigured, revenueCatEntitlement, summarizeSubscription } from "@/lib/revenuecat";
+import { MARKET_OPTIONS, PRODUCT_CATEGORIES } from "@/lib/complianceData";
+import { REGULATORY_SOURCES } from "@/lib/regulatorySources";
 
 type Risk = "High risk" | "Medium risk" | "Safe";
 type RiskLevel = "low" | "medium" | "high";
@@ -86,7 +88,7 @@ const demoProducts: Product[] = [
     id: "p1",
     name: "Daily Glow Collagen",
     category: "Dietary Supplement",
-    market: "United States FDA + FTC",
+    market: "United States",
     platforms: ["Website", "Amazon"],
     ingredients: ["Hydrolyzed collagen", "Vitamin C", "Biotin", "Hyaluronic acid"],
     claims: "Supports healthy skin, hair, and nails.",
@@ -170,12 +172,18 @@ const demoClaims: ClaimAnalysis[] = [
   },
 ];
 
-const demoRegulations: RegulationUpdate[] = [
-  { id: "r1", organization: "FDA", country: "United States", category: "Labeling", title: "Structure/function claim reminder", summary: "Review claim substantiation and required disclaimer placement before publishing supplement labels.", officialUrl: "https://www.fda.gov/food/food-labeling-nutrition/structurefunction-claims", dateFound: "Jun 10, 2026", status: "unread", notes: "" },
-  { id: "r2", organization: "FTC", country: "United States", category: "Advertising", title: "Health products compliance guidance", summary: "Advertising claims must be truthful, not misleading, and supported by competent and reliable scientific evidence.", officialUrl: "https://www.ftc.gov/business-guidance/resources/health-products-compliance-guidance", dateFound: "Jun 8, 2026", status: "reviewed", notes: "" },
-  { id: "r3", organization: "FDA", country: "United States", category: "Supplement", title: "Dietary supplement labeling guide", summary: "Official FDA labeling guidance covering identity statements, ingredient information, and required label elements.", officialUrl: "https://www.fda.gov/food/dietary-supplements-guidance-documents-regulatory-information/dietary-supplement-labeling-guide", dateFound: "Jun 5, 2026", status: "unread", notes: "" },
-  { id: "r4", organization: "FSSAI", country: "India", category: "Food Safety", title: "FSSAI food regulation updates", summary: "Official notices, amendments, and food safety updates published by FSSAI.", officialUrl: "https://fssai.gov.in/recent-whatnew.php", dateFound: "Jun 3, 2026", status: "unread", notes: "" },
-];
+const demoRegulations: RegulationUpdate[] = REGULATORY_SOURCES.map((source, index) => ({
+  id: source.id,
+  organization: source.organization,
+  country: source.country,
+  category: source.category,
+  title: source.title,
+  summary: source.summary,
+  officialUrl: source.url,
+  dateFound: index < 5 ? "Jun 12, 2026" : "Reference library",
+  status: "unread",
+  notes: "",
+}));
 
 const fallbackDisclaimer = "ClaimGuard provides AI-assisted risk flags and educational guidance. It is not legal advice. Consult a qualified compliance professional before publishing high-risk claims.";
 const useDevelopmentFallback = process.env.NODE_ENV === "development" && !isSupabaseConfigured();
@@ -796,7 +804,7 @@ function AddProduct() {
   const [form, setForm] = useState({
     name: "",
     category: "Dietary Supplement",
-    market: "United States FDA + FTC",
+    market: "United States",
     platforms: [] as string[],
     ingredients: [] as string[],
     claims: "",
@@ -880,12 +888,12 @@ function AddProduct() {
                 <Field label="Product name"><input className="input" value={form.name} onChange={(event) => patch({ name: event.target.value })} placeholder="e.g. Daily Glow Collagen" /></Field>
                 <Field label="Product category">
                   <select className="input" value={form.category} onChange={(event) => patch({ category: event.target.value })}>
-                    {["Dietary Supplement", "Functional Food", "Beverage", "Cosmetic", "Other"].map((value) => <option key={value}>{value}</option>)}
+                    {PRODUCT_CATEGORIES.map((value) => <option key={value}>{value}</option>)}
                   </select>
                 </Field>
                 <Field label="Market">
                   <select className="input" value={form.market} onChange={(event) => patch({ market: event.target.value })}>
-                    <option>United States FDA + FTC</option>
+                    {MARKET_OPTIONS.map((value) => <option key={value}>{value}</option>)}
                   </select>
                 </Field>
                 <Field label="Platforms">
@@ -1337,8 +1345,13 @@ function Regulations() {
   const [message, setMessage] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const [filter, setFilter] = useState("All");
-  const filters = ["All", "FDA", "FTC", "FSSAI", "Labeling", "Supplement", "Advertising", "Food Safety"];
-  const visibleUpdates = updates.filter((update) => filter === "All" || update.organization === filter || update.category.toLowerCase().includes(filter.toLowerCase()));
+  const [sourceSearch, setSourceSearch] = useState("");
+  const filters = ["All", "FDA", "FTC", "EPA", "FSSAI", "TGA", "Health Canada", "Food", "Advertising", "Environmental Claims"];
+  const visibleUpdates = updates.filter((update) => {
+    const matchesFilter = filter === "All" || update.organization === filter || update.category.toLowerCase().includes(filter.toLowerCase());
+    const query = sourceSearch.trim().toLowerCase();
+    return matchesFilter && (!query || `${update.organization} ${update.country} ${update.category} ${update.title} ${update.summary}`.toLowerCase().includes(query));
+  });
 
   useEffect(() => {
     const load = async () => {
@@ -1437,9 +1450,18 @@ function Regulations() {
   };
 
   return (
-    <AppShell title="Regulation Updates" subtitle="Official FDA, FTC, and FSSAI updates monitored for your products." action={<button onClick={sync} disabled={syncing} className="primary">{syncing ? <LoaderCircle size={16} className="animate-spin" /> : <Landmark size={16} />}{syncing ? "Syncing..." : "Sync official sources"}</button>}>
+    <AppShell title="Regulation Library" subtitle={`${REGULATORY_SOURCES.length} curated official sources across ${new Set(REGULATORY_SOURCES.map((source) => source.organization)).size} regulators and ${MARKET_OPTIONS.length} markets.`} action={<button onClick={sync} disabled={syncing} className="primary">{syncing ? <LoaderCircle size={16} className="animate-spin" /> : <Landmark size={16} />}{syncing ? "Syncing..." : "Sync official sources"}</button>}>
       {error && <Notice text={error} />}
       {message && <div className="mb-5 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{message}</div>}
+      <div className="mb-5 grid gap-3 sm:grid-cols-3">
+        <Metric label="Official sources" value={String(REGULATORY_SOURCES.length)} icon={Landmark} tone="bg-blue-50 text-blue-600" note="Curated regulator guidance" />
+        <Metric label="Product categories" value={String(PRODUCT_CATEGORIES.length)} icon={Package} tone="bg-emerald-50 text-emerald-600" note="Sector-aware matching" />
+        <Metric label="Markets covered" value={String(MARKET_OPTIONS.length)} icon={Globe2} tone="bg-violet-50 text-violet-600" note="Localized source selection" />
+      </div>
+      <label className="relative mb-4 block">
+        <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" size={16} />
+        <input value={sourceSearch} onChange={(event) => setSourceSearch(event.target.value)} className="input !pl-11" placeholder="Search regulator, market, sector, or guidance topic..." />
+      </label>
       <div className="mb-5 flex flex-wrap gap-2">{filters.map((item) => <button key={item} onClick={() => setFilter(item)} className={filter === item ? "primary !py-2" : "secondary !py-2"}>{item}</button>)}</div>
       <div className="space-y-5">
         {loading ? <div className="surface p-8 text-sm text-muted">Loading regulation updates...</div> : visibleUpdates.length ? visibleUpdates.map((update) => (
