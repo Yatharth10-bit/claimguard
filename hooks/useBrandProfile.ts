@@ -63,7 +63,7 @@ export function useBrandProfile() {
       const result = await saveBrandProfile(next, userId);
       if (result.ok) setProfile(next);
       setSaving(false);
-      return result.ok ? next : null;
+      return result.ok ? next : { error: result.error || "Could not save profile." };
     },
     [profile?.createdAt, userId],
   );

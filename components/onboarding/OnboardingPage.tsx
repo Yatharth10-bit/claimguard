@@ -70,8 +70,9 @@ export function OnboardingPage() {
       return;
     }
     const saved = await completeOnboarding(draft);
-    if (!saved) {
-      setError("We saved your answers locally but could not sync them to your account. Check your connection and try again.");
+    if (!saved || "error" in saved) {
+      const detail = saved && "error" in saved ? saved.error : "Unknown error";
+      setError(`We saved your answers locally but could not sync them to your account. ${detail}`);
       return;
     }
     router.push("/dashboard");

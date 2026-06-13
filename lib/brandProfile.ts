@@ -121,34 +121,65 @@ export async function loadBrandProfile(userId?: string | null): Promise<BrandCom
     return local;
   }
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("brand_compliance_profile")
-    .eq("id", id)
-    .maybeSingle();
+  let remoteProfile: BrandComplianceProfile | null = null;
 
-  if (error) {
-    return local;
+  try {
+    const response = await fetch("/api/profile", { credentials: "same-origin" });
+    if (response.ok) {
+      const body = await response.json();
+      remoteProfile = body.profile ?? null;
+    }
+  } catch {
+    // Fall through to direct client read.
   }
 
-  const remote = data?.brand_compliance_profile as BrandComplianceProfile | null;
-  let best = mergeProfiles(local, remote);
+  if (remoteProfile === null) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("brand_compliance_profile")
+      .eq("id", id)
+      .maybeSingle();
+    if (!error) {
+      remoteProfile = data?.brand_compliance_profile as BrandComplianceProfile | null;
+    }
+  }
+  let best = mergeProfiles(local, remoteProfile);
 
-  if (local && remote && local.onboardingCompleted && remote.onboardingCompleted) {
-    best = isNewer(local, remote)
+  if (local && remoteProfile && local.onboardingCompleted && remoteProfile.onboardingCompleted) {
+    best = isNewer(local, remoteProfile)
       ? { ...EMPTY_BRAND_PROFILE, ...local }
-      : { ...EMPTY_BRAND_PROFILE, ...remote };
+      : { ...EMPTY_BRAND_PROFILE, ...remoteProfile };
   }
 
   if (best) {
     writeLocalProfile(localKey, best);
   }
 
-  if (local?.onboardingCompleted && !remote?.onboardingCompleted) {
+  if (local?.onboardingCompleted && !remoteProfile?.onboardingCompleted) {
     await saveBrandProfile(local, id, { skipRemoteMerge: true });
   }
 
   return best;
+}
+
+async function saveBrandProfileRemote(
+  payload: BrandComplianceProfile,
+  options?: { skipRemoteMerge?: boolean },
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const response = await fetch("/api/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      credentials: "same-origin",
+    });
+    const body = await response.json();
+    if (response.ok) return { ok: true };
+    if (options?.skipRemoteMerge) return { ok: false, error: body.error };
+    return { ok: false, error: body.error || "Could not sync profile to your account." };
+  } catch {
+    return { ok: false, error: "Network error while saving your profile." };
+  }
 }
 
 export async function saveBrandProfile(
@@ -166,26 +197,21 @@ export async function saveBrandProfile(
   };
   writeLocalProfile(localKey, payload);
 
-  const supabase = getSupabaseBrowser();
-  if (!supabase || !id || !isSupabaseConfigured()) {
+  if (!isSupabaseConfigured()) {
     return { ok: true };
   }
 
-  const { data: { user } } = await supabase.auth.getUser();
-  const { error } = await supabase
-    .from("profiles")
-    .upsert({
-      id,
-      email: user?.email || null,
-      full_name: String(user?.user_metadata?.full_name || ""),
-      brand_compliance_profile: payload,
-    }, { onConflict: "id" });
-
-  if (error && !options?.skipRemoteMerge) {
-    return { ok: false, error: error.message };
+  const supabase = getSupabaseBrowser();
+  if (supabase) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      return options?.skipRemoteMerge
+        ? { ok: true }
+        : { ok: false, error: "Your session expired. Please log in again and retry onboarding." };
+    }
   }
 
-  return { ok: !error };
+  return saveBrandProfileRemote(payload, options);
 }
 
 export function getCheckFirstClaimHref(options: {
