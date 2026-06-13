@@ -18,7 +18,8 @@ Get-Content $EnvFile | ForEach-Object {
     if ($eq -lt 1) { return }
 
     $name = $line.Substring(0, $eq).Trim()
-    $value = $line.Substring($eq + 1)
+    $value = $line.Substring($eq + 1).Trim()
+    if ([string]::IsNullOrWhiteSpace($value)) { return }
 
     foreach ($envName in $Targets) {
         Write-Host "Setting $name ($envName)..."
