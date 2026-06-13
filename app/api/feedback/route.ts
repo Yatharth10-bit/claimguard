@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getClientIp } from "@/lib/request";
-import { checkRateLimit } from "@/lib/rate-limit";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
@@ -22,15 +20,6 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-  }
-
-  const limit = await checkRateLimit(
-    `feedback:${user.id}:${getClientIp(request)}`,
-    Number(process.env.FEEDBACK_RATE_LIMIT || 5),
-    15 * 60_000,
-  );
-  if (!limit.allowed) {
-    return NextResponse.json({ error: "Too many feedback submissions. Please try again later." }, { status: 429 });
   }
 
   const admin = getSupabaseAdmin();
