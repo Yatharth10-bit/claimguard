@@ -10,7 +10,11 @@ const TABS = ["overview", "amazon", "label", "influencer", "substantiation"] as 
 
 export function ProductDetailPage({ productId }: { productId: string }) {
   const searchParams = useSearchParams();
-  const tab = (searchParams.get("tab") as (typeof TABS)[number]) || "overview";
+  const tabParam = searchParams.get("tab");
+  const tab = TABS.includes(tabParam as (typeof TABS)[number])
+    ? (tabParam as (typeof TABS)[number])
+    : "overview";
+  const listingId = searchParams.get("listing");
   const { products, loading } = useProducts();
   const product = products.find((p) => p.id === productId);
 
@@ -59,7 +63,7 @@ export function ProductDetailPage({ productId }: { productId: string }) {
               <Link href={`/claim-checker?product=${productId}`} className="primary mt-2 w-fit">Check a claim</Link>
             </div>
           )}
-          {tab === "amazon" && <AmazonListingsTab productId={productId} />}
+          {tab === "amazon" && <AmazonListingsTab productId={productId} initialListingId={listingId} />}
           {tab === "label" && (
             <div className="surface bg-stone p-8 text-center text-sm text-muted">Label upload & Supplement Facts validator — coming in Feature 4.</div>
           )}

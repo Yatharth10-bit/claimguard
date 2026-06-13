@@ -13,7 +13,10 @@
     "test:products": "tsx scripts/run-product-regression.ts",
     "test:expanded": "tsx scripts/run-expanded-regression.ts",
     "train:copilot": "tsx scripts/train-copilot-model.ts",
-    "test:plans": "tsx scripts/test-plan-limits.ts"
+    "test:plans": "tsx scripts/test-plan-limits.ts",
+    "db:deploy": "tsx scripts/deploy-supabase.ts",
+    "db:check": "tsx scripts/check-supabase-tables.ts",
+    "deploy:vercel": "vercel --prod"
   },
   "dependencies": {
     "@dodopayments/nextjs": "^0.3.6",

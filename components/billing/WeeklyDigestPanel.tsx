@@ -83,6 +83,20 @@ export function WeeklyDigestPanel() {
 
   if (error) return <div className="surface p-5 text-sm text-high">{error}</div>;
 
+  if (!items.length) {
+    return (
+      <section className="surface p-5 sm:p-6">
+        <div className="flex items-center gap-2">
+          <CalendarDays size={18} className="text-lavender" />
+          <h2 className="font-bold">Weekly compliance digest</h2>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-muted">
+          No digest items yet. Add products, scan claims, and sync regulations to populate your weekly summary.
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section className="surface p-5 sm:p-6">
       <div className="mb-4 flex items-center gap-2">

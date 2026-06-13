@@ -8,10 +8,22 @@ export function AmazonRiskCard() {
   const [stats, setStats] = useState<{ listings: number; high_risk: number } | null>(null);
 
   useEffect(() => {
+    let active = true;
     fetch("/api/feature-stats")
-      .then((r) => r.json())
-      .then((body) => setStats(body.amazon || { listings: 0, high_risk: 0 }))
-      .catch(() => setStats({ listings: 0, high_risk: 0 }));
+      .then(async (response) => {
+        if (!response.ok) return { listings: 0, high_risk: 0 };
+        const body = await response.json();
+        return body.amazon || { listings: 0, high_risk: 0 };
+      })
+      .then((amazon) => {
+        if (active) setStats(amazon);
+      })
+      .catch(() => {
+        if (active) setStats({ listings: 0, high_risk: 0 });
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (

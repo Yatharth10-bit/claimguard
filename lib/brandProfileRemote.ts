@@ -73,6 +73,9 @@ export async function loadRemoteBrandProfile(
   admin: SupabaseClient,
   userId: string,
 ): Promise<BrandComplianceProfile | null> {
+  const fromStorage = await loadFromStorage(admin, userId);
+  if (fromStorage) return fromStorage;
+
   const columnResult = await admin
     .from("profiles")
     .select("brand_compliance_profile")
@@ -82,9 +85,6 @@ export async function loadRemoteBrandProfile(
   if (!columnResult.error && columnResult.data?.brand_compliance_profile) {
     return parseProfile(columnResult.data.brand_compliance_profile);
   }
-
-  const fromStorage = await loadFromStorage(admin, userId);
-  if (fromStorage) return fromStorage;
 
   return loadFromCompanyNameFallback(admin, userId);
 }

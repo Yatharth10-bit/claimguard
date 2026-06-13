@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, LoaderCircle, Plus, ScanText } from "lucide-react";
+import { AlertTriangle, LoaderCircle, Plus, ScanText, X } from "lucide-react";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import type { AmazonScanIssue } from "@/lib/amazonScanner";
 
 type ListingRow = {
@@ -26,7 +27,27 @@ const riskStyles: Record<string, string> = {
   low: "bg-mint text-safe",
 };
 
-export function AmazonListingsTab({ productId }: { productId: string }) {
+function listingHasCopy(form: {
+  asin: string;
+  title: string;
+  bullets: string[];
+  description: string;
+}) {
+  return Boolean(
+    form.asin.trim()
+    || form.title.trim()
+    || form.description.trim()
+    || form.bullets.some((bullet) => bullet.trim()),
+  );
+}
+
+export function AmazonListingsTab({
+  productId,
+  initialListingId,
+}: {
+  productId: string;
+  initialListingId?: string | null;
+}) {
   const [listings, setListings] = useState<ListingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -43,6 +64,8 @@ export function AmazonListingsTab({ productId }: { productId: string }) {
     description: "",
   });
 
+  useBodyScrollLock(modalOpen);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -50,9 +73,12 @@ export function AmazonListingsTab({ productId }: { productId: string }) {
       const res = await fetch(`/api/products/${productId}/amazon-listings`);
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Failed to load listings");
-      setListings(body.listings || []);
+      const nextListings = (body.listings || []) as ListingRow[];
+      setListings(nextListings);
+      return nextListings;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load listings");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -62,7 +88,26 @@ export function AmazonListingsTab({ productId }: { productId: string }) {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!initialListingId || loading || selected) return;
+    const match = listings.find((listing) => listing.id === initialListingId);
+    if (match?.latest_scan) setSelected(match);
+  }, [initialListingId, listings, loading, selected]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setModalOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [modalOpen]);
+
   const addListing = async () => {
+    if (!listingHasCopy(form)) {
+      setError("Add an ASIN or paste listing copy before saving.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -97,9 +142,14 @@ export function AmazonListingsTab({ productId }: { productId: string }) {
       const res = await fetch(`/api/amazon-listings/${id}/scan`, { method: "POST" });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Scan failed");
-      await load();
-      const updated = listings.find((l) => l.id === id);
-      if (updated) setSelected({ ...updated, latest_scan: body.scan });
+      const nextListings = await load();
+      const refreshed = nextListings.find((listing) => listing.id === id);
+      if (refreshed) {
+        setSelected({
+          ...refreshed,
+          latest_scan: body.scan || refreshed.latest_scan,
+        });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Scan failed");
     } finally {
@@ -182,7 +232,7 @@ export function AmazonListingsTab({ productId }: { productId: string }) {
       ) : (
         <div className="grid gap-4">
           {listings.map((listing) => (
-            <div key={listing.id} className="surface p-5">
+            <div key={listing.id} className="surface p-5 transition hover:-translate-y-0.5 hover:shadow-md">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="font-bold">{listing.title || "Untitled listing"}</h3>
@@ -191,10 +241,12 @@ export function AmazonListingsTab({ productId }: { productId: string }) {
                     Last scan: {listing.last_scanned_at ? new Date(listing.last_scanned_at).toLocaleString() : "Never"}
                   </p>
                 </div>
-                {listing.latest_scan && (
+                {listing.latest_scan ? (
                   <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${riskStyles[listing.latest_scan.overall_risk] || riskStyles.low}`}>
                     {listing.latest_scan.overall_risk}
                   </span>
+                ) : (
+                  <span className="rounded-full bg-stone px-3 py-1 text-xs font-bold uppercase text-muted">Not scanned</span>
                 )}
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
@@ -205,7 +257,7 @@ export function AmazonListingsTab({ productId }: { productId: string }) {
                   onClick={() => void scanListing(listing.id)}
                 >
                   {scanningId === listing.id ? <LoaderCircle size={16} className="animate-spin" /> : <ScanText size={16} />}
-                  Scan Now
+                  {scanningId === listing.id ? "Scanning..." : "Scan Now"}
                 </button>
                 {listing.latest_scan && (
                   <button type="button" className="secondary" onClick={() => setSelected(listing)}>View results</button>
@@ -217,9 +269,23 @@ export function AmazonListingsTab({ productId }: { productId: string }) {
       )}
 
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-          <div className="surface max-h-[90vh] w-full max-w-lg overflow-y-auto p-6">
-            <h3 className="text-lg font-bold">Add Amazon listing</h3>
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 backdrop-blur-[2px] sm:items-center"
+          onClick={() => setModalOpen(false)}
+        >
+          <div
+            className="surface max-h-[90vh] w-full max-w-lg overflow-y-auto p-6"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="amazon-listing-modal-title"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <h3 id="amazon-listing-modal-title" className="text-lg font-bold">Add Amazon listing</h3>
+              <button type="button" className="secondary !px-2.5 !py-2" aria-label="Close" onClick={() => setModalOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
             <div className="mt-4 flex gap-2">
               <button type="button" className={modalTab === "asin" ? "primary" : "secondary"} onClick={() => setModalTab("asin")}>Paste ASIN</button>
               <button type="button" className={modalTab === "paste" ? "primary" : "secondary"} onClick={() => setModalTab("paste")}>Paste Copy</button>

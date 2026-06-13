@@ -1,4 +1,5 @@
 import { getSupabaseBrowser, isSupabaseConfigured } from "@/lib/supabase/client";
+import { PROFILE_MARKER } from "@/lib/brandProfileRemote";
 
 /** Set to false to disable onboarding redirects and dashboard personalization without removing code. */
 export const BRAND_ONBOARDING_ENABLED = true;
@@ -136,11 +137,18 @@ export async function loadBrandProfile(userId?: string | null): Promise<BrandCom
   if (remoteProfile === null) {
     const { data, error } = await supabase
       .from("profiles")
-      .select("brand_compliance_profile")
+      .select("company_name")
       .eq("id", id)
       .maybeSingle();
-    if (!error) {
-      remoteProfile = data?.brand_compliance_profile as BrandComplianceProfile | null;
+    if (!error && data?.company_name?.startsWith(PROFILE_MARKER)) {
+      try {
+        remoteProfile = {
+          ...EMPTY_BRAND_PROFILE,
+          ...JSON.parse(data.company_name.slice(PROFILE_MARKER.length)),
+        };
+      } catch {
+        remoteProfile = null;
+      }
     }
   }
   let best = mergeProfiles(local, remoteProfile);

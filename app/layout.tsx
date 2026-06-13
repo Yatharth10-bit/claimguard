@@ -7,6 +7,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "ClaimGuard",
   description: "AI claim-risk checker for food and supplement brands",
+  icons: {
+    icon: [{ url: "/icon", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

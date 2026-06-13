@@ -46,6 +46,7 @@ import { refreshWorkspaceData, useAudit, useClaims, useProducts, useRegulationFe
 import { useBrandProfile } from "@/hooks/useBrandProfile";
 import { useClientMounted } from "@/hooks/useClientMounted";
 import { useUsage } from "@/hooks/useUsage";
+import { resolveAuthSearchParamError } from "@/lib/authErrors";
 import { postAuthPath } from "@/lib/authRouting";
 import { signInWithGoogle } from "@/lib/googleAuth";
 import { BRAND_ONBOARDING_ENABLED, isOnboardingComplete, loadBrandProfile } from "@/lib/brandProfile";
@@ -2247,7 +2248,9 @@ function AnimatedRiskRing({ value, label, color }: { value: number; label: strin
 type BillingCycle = "monthly" | "annual";
 
 function Landing() {
+  const searchParams = useSearchParams();
   const { isLoggedIn, loading: authLoading } = useAuthSession();
+  const [authNotice, setAuthNotice] = useState("");
   const [heroClaim, setHeroClaim] = useState("Boosts immunity and prevents illness.");
   const [heroResult, setHeroResult] = useState<ReturnType<typeof analyzeClaim> | null>(null);
   const [demoView, setDemoView] = useState<"products" | "risk" | "updates">("risk");
@@ -2256,6 +2259,11 @@ function Landing() {
   const [pricingRegion, setPricingRegion] = useState<PricingRegionCode>("US");
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
   const mounted = useClientMounted();
+
+  useEffect(() => {
+    const message = resolveAuthSearchParamError(searchParams);
+    if (message) setAuthNotice(message);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -2316,6 +2324,12 @@ function Landing() {
 
   return (
     <div className="landing-motion min-h-screen bg-stone" data-theme={mounted ? theme : "light"}>
+      {authNotice && (
+        <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-center text-sm text-amber-950">
+          {authNotice}{" "}
+          <Link href="/login" className="font-semibold underline underline-offset-2">Sign in again</Link>
+        </div>
+      )}
       <LandingMotion />
       <header className={`landing-nav sticky top-0 z-40 ${navCompact ? "is-compact" : ""}`}>
         <div className="nav-inner mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-6">
@@ -2773,12 +2787,8 @@ function Auth({ signup = false }: { signup?: boolean }) {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const authError = searchParams.get("error");
-    if (authError === "auth_callback_failed") {
-      setError("Google sign-in could not be completed. Please try again.");
-    } else if (authError === "auth_not_configured") {
-      setError("Authentication is not configured on the server.");
-    }
+    const message = resolveAuthSearchParamError(searchParams);
+    if (message) setError(message);
   }, [searchParams]);
 
   const resolvePostAuthPath = async () => {
