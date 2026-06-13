@@ -19,6 +19,7 @@ import { RegressionCoverageBadge } from "@/components/claim-checker/RegressionCo
 import { RiskPatternTips } from "@/components/claim-checker/RiskPatternTips";
 import { RegulationImpactExplainer } from "@/components/regulations/RegulationImpactExplainer";
 import { CheckFirstClaimCTA } from "@/components/landing/CheckFirstClaimCTA";
+import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 import { FeedbackForm } from "@/components/support/FeedbackForm";
 import { LegalPage } from "@/components/legal/LegalPage";
 import { SignupLegalConsent } from "@/components/legal/SignupLegalConsent";
@@ -43,6 +44,7 @@ import { useBrandProfile } from "@/hooks/useBrandProfile";
 import { useClientMounted } from "@/hooks/useClientMounted";
 import { useUsage } from "@/hooks/useUsage";
 import { postAuthPath } from "@/lib/authRouting";
+import { signInWithGoogle } from "@/lib/googleAuth";
 import { BRAND_ONBOARDING_ENABLED, isOnboardingComplete, loadBrandProfile } from "@/lib/brandProfile";
 import { getSupabaseBrowser, isSupabaseConfigured } from "@/lib/supabase/client";
 import { analyzeClaim, CLAIM_DISCLAIMER } from "@/lib/analyzeClaim";
@@ -2822,8 +2824,18 @@ function Auth({ signup = false }: { signup?: boolean }) {
   const [password, setPassword] = useState("");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    const authError = searchParams.get("error");
+    if (authError === "auth_callback_failed") {
+      setError("Google sign-in could not be completed. Please try again.");
+    } else if (authError === "auth_not_configured") {
+      setError("Authentication is not configured on the server.");
+    }
+  }, [searchParams]);
 
   const resolvePostAuthPath = async () => {
     const profile = await loadBrandProfile();
@@ -2889,6 +2901,29 @@ function Auth({ signup = false }: { signup?: boolean }) {
     setLoading(false);
   };
 
+  const handleGoogleSignIn = async () => {
+    if (signup && !agreedToTerms) {
+      setError("Please agree to the Terms of Service and Privacy Policy to continue with Google.");
+      return;
+    }
+    if (!isSupabaseConfigured()) {
+      setError("Add Supabase environment variables to enable authentication.");
+      return;
+    }
+    setGoogleLoading(true);
+    setError("");
+    setMessage("");
+    try {
+      await signInWithGoogle({
+        next: searchParams.get("next"),
+        signup,
+      });
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to start Google sign-in.");
+      setGoogleLoading(false);
+    }
+  };
+
   return (
     <div className="grid min-h-screen bg-stone lg:grid-cols-2">
       <div className="flex min-h-screen items-center justify-center p-5 sm:p-8">
@@ -2901,10 +2936,21 @@ function Auth({ signup = false }: { signup?: boolean }) {
           <div className="mt-8 space-y-4">
             {mounted ? (
               <>
+                {signup && <SignupLegalConsent checked={agreedToTerms} onChange={setAgreedToTerms} />}
+                <GoogleSignInButton
+                  label={signup ? "Continue with Google" : "Sign in with Google"}
+                  loading={googleLoading}
+                  disabled={signup && !agreedToTerms}
+                  onClick={() => void handleGoogleSignIn()}
+                />
+                <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[.14em] text-muted">
+                  <span className="h-px flex-1 bg-black/10" />
+                  or use email
+                  <span className="h-px flex-1 bg-black/10" />
+                </div>
                 {signup && <Field label="Full name"><input className="input" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Your name" /></Field>}
                 <Field label="Work email"><input className="input" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" /></Field>
                 <Field label="Password"><input type="password" className="input" autoComplete={signup ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters" /></Field>
-                {signup && <SignupLegalConsent checked={agreedToTerms} onChange={setAgreedToTerms} />}
                 {error && <Notice text={error} />}
                 {message && <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{message}</div>}
                 <button type="button" onClick={handleSubmit} disabled={loading || (signup && !agreedToTerms)} className="primary w-full">
