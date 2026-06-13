@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CookieConsentBar } from "@/components/legal/CookieConsentBar";
 import { SessionProvider } from "@/contexts/AuthContext";
 import "./globals.css";
 
@@ -10,8 +11,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>
-        <SessionProvider>{children}</SessionProvider>
+      <body suppressHydrationWarning>
+        <SessionProvider>
+          {children}
+          <CookieConsentBar />
+        </SessionProvider>
       </body>
     </html>
   );

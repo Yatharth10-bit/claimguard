@@ -20,6 +20,9 @@ import { RiskPatternTips } from "@/components/claim-checker/RiskPatternTips";
 import { RegulationImpactExplainer } from "@/components/regulations/RegulationImpactExplainer";
 import { CheckFirstClaimCTA } from "@/components/landing/CheckFirstClaimCTA";
 import { FeedbackForm } from "@/components/support/FeedbackForm";
+import { LegalPage } from "@/components/legal/LegalPage";
+import { SignupLegalConsent } from "@/components/legal/SignupLegalConsent";
+import { COOKIE_POLICY, LEGAL_POLICY_VERSION, PRIVACY_POLICY, PRODUCT_DISCLAIMER, TERMS_OF_SERVICE } from "@/lib/legalContent";
 import {
   BILLING_TIER_TO_DODO,
   formatEnterpriseFrom,
@@ -37,6 +40,7 @@ import { BrandProfileSettings } from "@/components/onboarding/BrandProfileSettin
 import { OnboardingPage } from "@/components/onboarding/OnboardingPage";
 import { useAuthSession } from "@/contexts/AuthContext";
 import { useBrandProfile } from "@/hooks/useBrandProfile";
+import { useClientMounted } from "@/hooks/useClientMounted";
 import { useUsage } from "@/hooks/useUsage";
 import { postAuthPath } from "@/lib/authRouting";
 import { BRAND_ONBOARDING_ENABLED, isOnboardingComplete, loadBrandProfile } from "@/lib/brandProfile";
@@ -2160,27 +2164,6 @@ function Reports() {
   );
 }
 
-function LegalPage({ title, text }: { title: string; text: string[] }) {
-  return (
-    <div className="min-h-screen bg-stone px-5 py-10 sm:px-8">
-      <div className="mx-auto max-w-3xl">
-        <Logo />
-        <div className="surface mt-8 p-6 sm:p-10">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted">ClaimGuard policies</p>
-          <h1 className="mt-3 text-3xl font-extrabold tracking-[-.03em]">{title}</h1>
-          <div className="mt-6 space-y-4 text-sm leading-7 text-muted">
-            {text.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
-          </div>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/" className="secondary">Back to home</Link>
-            <Link href="/signup" className="primary">Create account <ArrowRight size={16} /></Link>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function LandingMotion() {
   useEffect(() => {
     const root = document.querySelector<HTMLElement>(".landing-motion");
@@ -2326,9 +2309,10 @@ function Landing() {
   const [navCompact, setNavCompact] = useState(false);
   const [pricingRegion, setPricingRegion] = useState<PricingRegionCode>("US");
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
-  const [clientReady, setClientReady] = useState(false);
+  const mounted = useClientMounted();
 
   useEffect(() => {
+    if (!mounted) return;
     const stored = localStorage.getItem("claimguard-landing-theme");
     if (stored === "dark" || stored === "contrast" || stored === "light") setTheme(stored);
     const storedRegion = localStorage.getItem("claimguard-pricing-region");
@@ -2341,8 +2325,7 @@ function Landing() {
       if (detectedRegion && detectedRegion in PRICING_REGIONS) setPricingRegion(detectedRegion as PricingRegionCode);
       else if (["AT", "BE", "CY", "DE", "EE", "ES", "FI", "FR", "GR", "HR", "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PT", "SI", "SK"].includes(detectedRegion)) setPricingRegion("EU");
     }
-    setClientReady(true);
-  }, []);
+  }, [mounted]);
 
   useEffect(() => {
     const onScroll = () => setNavCompact(window.scrollY > 36);
@@ -2352,16 +2335,19 @@ function Landing() {
   }, []);
 
   useEffect(() => {
+    if (!mounted) return;
     localStorage.setItem("claimguard-landing-theme", theme);
-  }, [theme]);
+  }, [theme, mounted]);
 
   useEffect(() => {
+    if (!mounted) return;
     localStorage.setItem("claimguard-pricing-region", pricingRegion);
-  }, [pricingRegion]);
+  }, [pricingRegion, mounted]);
 
   useEffect(() => {
+    if (!mounted) return;
     localStorage.setItem("claimguard-billing-cycle", billingCycle);
-  }, [billingCycle]);
+  }, [billingCycle, mounted]);
 
   const region = PRICING_REGIONS[pricingRegion];
   const planPrice = (planId: string) => {
@@ -2383,7 +2369,7 @@ function Landing() {
   };
 
   return (
-    <div className="landing-motion min-h-screen bg-stone" data-theme={theme} suppressHydrationWarning>
+    <div className="landing-motion min-h-screen bg-stone" data-theme={mounted ? theme : "light"}>
       <LandingMotion />
       <header className={`landing-nav sticky top-0 z-40 ${navCompact ? "is-compact" : ""}`}>
         <div className="nav-inner mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-6">
@@ -2397,12 +2383,16 @@ function Landing() {
           {!authLoading && !isLoggedIn && <Link href="/login">Log in</Link>}
         </nav>
         <div className="flex items-center gap-2">
-          <div className="theme-switcher flex rounded-full border border-black/[.08] bg-white/70 p-0.5 sm:p-1">
-            {([["light", Sun], ["dark", Moon], ["contrast", Contrast]] as const).map(([value, Icon]) => (
-              <button key={value} aria-label={`${value} theme`} onClick={() => setTheme(value)} className={`grid h-7 w-7 place-items-center rounded-full sm:h-8 sm:w-8 ${theme === value ? "bg-ink text-white shadow-sm" : "text-muted hover:text-ink"}`}><Icon size={13} /></button>
-            ))}
-          </div>
-          {!authLoading && (
+          {mounted ? (
+            <div className="theme-switcher flex rounded-full border border-black/[.08] bg-white/70 p-0.5 sm:p-1">
+              {([["light", Sun], ["dark", Moon], ["contrast", Contrast]] as const).map(([value, Icon]) => (
+                <button key={value} type="button" aria-label={`${value} theme`} onClick={() => setTheme(value)} className={`grid h-7 w-7 place-items-center rounded-full sm:h-8 sm:w-8 ${theme === value ? "bg-ink text-white shadow-sm" : "text-muted hover:text-ink"}`}><Icon size={13} /></button>
+              ))}
+            </div>
+          ) : (
+            <div className="h-8 w-[92px] rounded-full border border-black/[.08] bg-white/70" aria-hidden />
+          )}
+          {mounted && !authLoading && (
             isLoggedIn
               ? <Link href="/dashboard" className="primary !rounded-full !px-3 !py-2 sm:!px-5">Dashboard</Link>
               : <Link href="/signup" className="primary !rounded-full !px-3 !py-2 sm:!px-5">Start <span className="hidden sm:inline">Free</span></Link>
@@ -2420,10 +2410,17 @@ function Landing() {
             <h1 className="mt-6 text-[2.75rem] font-extrabold leading-[1.04] tracking-[-.055em] sm:text-[3.15rem] lg:text-[3.35rem] xl:text-[3.75rem]">Compliance monitoring for brands that <span className="figma-accent">cannot afford surprises.</span></h1>
             <p className="mt-6 max-w-[640px] text-base leading-7 text-muted sm:text-lg sm:leading-8">ClaimGuard watches regulation updates, checks risky product claims, and shows exactly what to fix before your food, supplement, or wellness brand gets into trouble.</p>
             <div className="mt-6 rounded-2xl border border-black/[.08] bg-white p-2 shadow-[0_16px_38px_rgba(16,24,45,.08)]">
-              <div className="flex gap-2">
-                <input aria-label="Quick claim check" autoComplete="off" value={heroClaim} onChange={(event) => setHeroClaim(event.target.value)} onKeyDown={(event) => event.key === "Enter" && checkHeroClaim()} className="min-w-0 flex-1 rounded-xl bg-stone px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-200" suppressHydrationWarning />
-                <button type="button" onClick={checkHeroClaim} disabled={!heroClaim.trim()} className="primary shrink-0 !px-4" suppressHydrationWarning><Sparkles size={16} /><span className="hidden sm:inline">Check</span></button>
-              </div>
+              {mounted ? (
+                <div className="flex gap-2">
+                  <input aria-label="Quick claim check" autoComplete="off" value={heroClaim} onChange={(event) => setHeroClaim(event.target.value)} onKeyDown={(event) => event.key === "Enter" && checkHeroClaim()} className="min-w-0 flex-1 rounded-xl bg-stone px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-200" />
+                  <button type="button" onClick={checkHeroClaim} disabled={!heroClaim.trim()} className="primary shrink-0 !px-4"><Sparkles size={16} /><span className="hidden sm:inline">Check</span></button>
+                </div>
+              ) : (
+                <div className="flex gap-2" aria-hidden>
+                  <div className="h-11 min-w-0 flex-1 rounded-xl bg-stone" />
+                  <div className="h-11 w-20 rounded-full bg-ink/90" />
+                </div>
+              )}
               {heroResult && (
                 <div className="mt-2 flex items-center gap-3 rounded-xl bg-stone px-3 py-2.5 text-xs">
                   <span className={`rounded-full px-2.5 py-1 font-bold uppercase ${levelStyles[heroResult.riskLevel]}`}>{heroResult.riskLevel} · {heroResult.riskScore}</span>
@@ -2458,11 +2455,29 @@ function Landing() {
               </div>
               <div className="p-5">
                 <div className="grid grid-cols-3 gap-3">
-                  {([
-                    ["products", "Products", "8", "text-blue-600"],
-                    ["risk", "High Risk", "3", "text-red-600"],
-                    ["updates", "Updates", "12", "text-emerald-600"],
-                  ] as const).map(([view, label, value, tone]) => <button onClick={() => setDemoView(view)} className={`rounded-xl border p-3 text-left transition ${demoView === view ? "border-emerald-200 bg-emerald-50 shadow-sm" : "border-black/[.06] bg-stone hover:bg-white"}`} key={view}><p className="text-[10px] text-muted">{label}</p><p className={`mt-1 text-xl font-extrabold ${tone}`}>{value}</p></button>)}
+                  {mounted ? (
+                    ([
+                      ["products", "Products", "8", "text-blue-600"],
+                      ["risk", "High Risk", "3", "text-red-600"],
+                      ["updates", "Updates", "12", "text-emerald-600"],
+                    ] as const).map(([view, label, value, tone]) => (
+                      <button type="button" onClick={() => setDemoView(view)} className={`rounded-xl border p-3 text-left transition ${demoView === view ? "border-emerald-200 bg-emerald-50 shadow-sm" : "border-black/[.06] bg-stone hover:bg-white"}`} key={view}>
+                        <p className="text-[10px] text-muted">{label}</p>
+                        <p className={`mt-1 text-xl font-extrabold ${tone}`}>{value}</p>
+                      </button>
+                    ))
+                  ) : (
+                    ([
+                      ["products", "Products", "8", "text-blue-600"],
+                      ["risk", "High Risk", "3", "text-red-600"],
+                      ["updates", "Updates", "12", "text-emerald-600"],
+                    ] as const).map(([view, label, value, tone]) => (
+                      <div className={`rounded-xl border p-3 text-left ${view === "risk" ? "border-emerald-200 bg-emerald-50 shadow-sm" : "border-black/[.06] bg-stone"}`} key={view} aria-hidden>
+                        <p className="text-[10px] text-muted">{label}</p>
+                        <p className={`mt-1 text-xl font-extrabold ${tone}`}>{value}</p>
+                      </div>
+                    ))
+                  )}
                 </div>
                 {demoView === "risk" && <div className="mt-4 rounded-xl border border-black/[.06] p-4"><div className="flex justify-between gap-3"><p className="text-sm font-bold">Turmeric Gummies</p><span className="rounded-full bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600">High Risk</span></div><div className="mt-4 h-2 rounded-full bg-slate-100"><div className="h-2 w-4/5 rounded-full bg-red-500" /></div><p className="mt-2 text-right text-xs font-bold">82/100</p><div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-xs font-bold text-emerald-700">Safer Rewrite Ready</p><p className="mt-1 text-[11px] text-emerald-700/70">Supports everyday comfort and mobility.</p></div></div>}
                 {demoView === "products" && <div className="mt-4 space-y-2">{[["Daily Glow Collagen", "18", "bg-emerald-500"], ["Focus Spark", "46", "bg-amber-400"], ["Turmeric Gummies", "82", "bg-red-500"]].map(([name, score, color]) => <div key={name} className="rounded-xl border border-black/[.06] p-3"><div className="flex justify-between text-xs"><strong>{name}</strong><span>{score}/100</span></div><div className="mt-2 h-1.5 rounded-full bg-slate-100"><div className={`h-1.5 rounded-full ${color}`} style={{ width: `${score}%` }} /></div></div>)}</div>}
@@ -2672,21 +2687,21 @@ function Landing() {
               </div>
               <h2 className="mt-4 text-3xl font-extrabold tracking-[-.04em] sm:text-4xl">Consultants charge $300/hr. ClaimGuard starts at $39/mo.</h2>
               <p className="mt-4 text-sm leading-7 text-muted">{PRICE_ANCHOR_COPY} Plans are locally priced for your market.</p>
-              {clientReady && pricingRegion === "US" && <p className="mt-3 rounded-full bg-mint px-4 py-2 text-xs font-semibold text-safe">{FOUNDING_OFFER_COPY}</p>}
+              {mounted && pricingRegion === "US" && <p className="mt-3 rounded-full bg-mint px-4 py-2 text-xs font-semibold text-safe">{FOUNDING_OFFER_COPY}</p>}
             </div>
             <div className="mx-auto mt-8 flex max-w-3xl flex-col items-center justify-between gap-4 rounded-2xl border border-black/[.08] bg-stone p-3 sm:flex-row">
-              {clientReady ? (
+              {mounted ? (
                 <>
                   <label className="relative flex w-full items-center gap-2 sm:w-auto">
                     <Globe2 className="pointer-events-none absolute left-3 text-[#14a995]" size={16} />
-                    <select aria-label="Pricing country and currency" autoComplete="off" value={pricingRegion} onChange={(event) => setPricingRegion(event.target.value as PricingRegionCode)} className="w-full appearance-none rounded-xl border border-black/[.08] bg-white py-2.5 pl-10 pr-10 text-sm font-bold outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 sm:w-auto" suppressHydrationWarning>
+                    <select aria-label="Pricing country and currency" autoComplete="off" value={pricingRegion} onChange={(event) => setPricingRegion(event.target.value as PricingRegionCode)} className="w-full appearance-none rounded-xl border border-black/[.08] bg-white py-2.5 pl-10 pr-10 text-sm font-bold outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 sm:w-auto">
                       {Object.entries(PRICING_REGIONS).map(([code, option]) => <option key={code} value={code}>{option.country} · {option.currency}</option>)}
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-3 text-muted" size={14} />
                   </label>
                   <div className="flex w-full rounded-xl border border-black/[.08] bg-white p-1 sm:w-auto">
                     {(["monthly", "annual"] as BillingCycle[]).map((cycle) => (
-                      <button key={cycle} type="button" onClick={() => setBillingCycle(cycle)} className={`flex-1 rounded-lg px-4 py-2 text-xs font-bold capitalize transition sm:flex-none ${billingCycle === cycle ? "bg-ink text-white shadow-sm" : "text-muted hover:text-ink"}`} suppressHydrationWarning>
+                      <button key={cycle} type="button" onClick={() => setBillingCycle(cycle)} className={`flex-1 rounded-lg px-4 py-2 text-xs font-bold capitalize transition sm:flex-none ${billingCycle === cycle ? "bg-ink text-white shadow-sm" : "text-muted hover:text-ink"}`}>
                         {cycle}{cycle === "annual" && <span className="ml-1.5 text-[#43dfc6]">-20%</span>}
                       </button>
                     ))}
@@ -2785,6 +2800,7 @@ function Landing() {
             <div className="mt-4 grid gap-3">
               <Link href="/terms">Terms</Link>
               <Link href="/privacy">Privacy</Link>
+              <Link href="/cookies">Cookies</Link>
               <Link href="/disclaimer">Disclaimer</Link>
             </div>
           </div>
@@ -2800,9 +2816,11 @@ function Landing() {
 function Auth({ signup = false }: { signup?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const mounted = useClientMounted();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -2813,6 +2831,14 @@ function Auth({ signup = false }: { signup?: boolean }) {
   };
 
   const handleSubmit = async () => {
+    if (!email.trim() || !password.trim()) {
+      setError("Email and password are required.");
+      return;
+    }
+    if (signup && !agreedToTerms) {
+      setError("Please agree to the Terms of Service and Privacy Policy to create an account.");
+      return;
+    }
     if (!isSupabaseConfigured()) {
       if (useDevelopmentFallback) {
         localStorage.setItem("claimguard-dev-user", JSON.stringify({ email, full_name: name }));
@@ -2820,10 +2846,6 @@ function Auth({ signup = false }: { signup?: boolean }) {
         return;
       }
       setError("Add Supabase environment variables to enable authentication.");
-      return;
-    }
-    if (!email.trim() || !password.trim()) {
-      setError("Email and password are required.");
       return;
     }
     setLoading(true);
@@ -2839,7 +2861,13 @@ function Auth({ signup = false }: { signup?: boolean }) {
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { full_name: name.trim() } },
+        options: {
+          data: {
+            full_name: name.trim(),
+            terms_accepted_at: new Date().toISOString(),
+            terms_version: LEGAL_POLICY_VERSION,
+          },
+        },
       });
       if (signUpError) {
         setError(signUpError.message);
@@ -2875,15 +2903,27 @@ function Auth({ signup = false }: { signup?: boolean }) {
           <h1 className="mt-3 text-3xl font-extrabold tracking-[-.03em]">{signup ? "Create your workspace" : "Log in to ClaimGuard"}</h1>
           <p className="mt-2 text-sm text-muted">{signup ? "Start checking claims with confidence." : "Log in to continue to ClaimGuard."}</p>
           <div className="mt-8 space-y-4">
-            {signup && <Field label="Full name"><input className="input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Your name" /></Field>}
-            <Field label="Work email"><input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" /></Field>
-            <Field label="Password"><input type="password" className="input" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters" /></Field>
-            {error && <Notice text={error} />}
-            {message && <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{message}</div>}
-            <button onClick={handleSubmit} disabled={loading} className="primary w-full">
-              {loading ? <LoaderCircle size={16} className="animate-spin" /> : <ArrowRight size={16} />}
-              {signup ? "Create account" : "Log in"}
-            </button>
+            {mounted ? (
+              <>
+                {signup && <Field label="Full name"><input className="input" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Your name" /></Field>}
+                <Field label="Work email"><input className="input" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" /></Field>
+                <Field label="Password"><input type="password" className="input" autoComplete={signup ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters" /></Field>
+                {signup && <SignupLegalConsent checked={agreedToTerms} onChange={setAgreedToTerms} />}
+                {error && <Notice text={error} />}
+                {message && <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{message}</div>}
+                <button type="button" onClick={handleSubmit} disabled={loading || (signup && !agreedToTerms)} className="primary w-full">
+                  {loading ? <LoaderCircle size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+                  {signup ? "Create account" : "Log in"}
+                </button>
+              </>
+            ) : (
+              <div className="space-y-4" aria-hidden>
+                <div className="h-20 rounded-xl bg-stone" />
+                <div className="h-20 rounded-xl bg-stone" />
+                <div className="h-20 rounded-xl bg-stone" />
+                <div className="h-12 rounded-full bg-ink/90" />
+              </div>
+            )}
           </div>
           <p className="mt-6 text-center text-sm text-muted">
             {signup ? "Already have an account?" : "New to ClaimGuard?"}{" "}
@@ -2923,8 +2963,9 @@ export default function Page() {
   if (path === "/tasks") return <TasksBoard />;
   if (path === "/settings") return <SettingsPage />;
   if (path === "/reports") return <Reports />;
-  if (path === "/terms") return <LegalPage title="Terms of Service" text={["ClaimGuard is provided for internal marketing review support.", "You are responsible for the accuracy, substantiation, and legality of every published claim.", "ClaimGuard does not provide legal advice and should not be treated as a substitute for professional review."]} />;
-  if (path === "/privacy") return <LegalPage title="Privacy Policy" text={["ClaimGuard stores account, product, and claim-analysis data in Supabase under your workspace account.", "Claim analysis uses a deterministic rules engine and does not send claim text to an AI API.", "You should avoid submitting sensitive personal, medical, or regulated customer data unless your internal policies allow it."]} />;
-  if (path === "/disclaimer") return <LegalPage title="Disclaimer" text={[CLAIM_DISCLAIMER, "Always consult a qualified compliance professional before publishing high-risk claims or health-related advertising.", "The rules engine is phrase-based and may miss important context, substantiation issues, or jurisdiction-specific rules."]} />;
+  if (path === "/terms") return <LegalPage document={TERMS_OF_SERVICE} />;
+  if (path === "/privacy") return <LegalPage document={PRIVACY_POLICY} />;
+  if (path === "/cookies") return <LegalPage document={COOKIE_POLICY} />;
+  if (path === "/disclaimer") return <LegalPage document={PRODUCT_DISCLAIMER} />;
   return <Landing />;
 }

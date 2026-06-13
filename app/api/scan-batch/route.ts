@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const sentences = splitClaimLikeSentences(parsed.data.copy);
     if (!sentences.length) return NextResponse.json({ error: "No claim-like sentences found in this copy." }, { status: 400 });
 
-    const burst = checkRateLimit(`${user.id}:burst`, 40, 60_000);
+    const burst = await checkRateLimit(`${user.id}:burst`, 40, 60_000);
     if (!burst.allowed) return NextResponse.json({ error: "Too many requests. Please wait a moment." }, { status: 429 });
 
     const gate = await assertCanScan(user.id, sentences.length);

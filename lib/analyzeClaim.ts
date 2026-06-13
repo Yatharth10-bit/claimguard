@@ -20,7 +20,7 @@ export type ClaimAnalysisResult = {
   disclaimer: string;
 };
 
-export const CLAIM_DISCLAIMER = "ClaimGuard provides rules-engine risk flags and educational guidance. It is not legal advice. Consult a qualified compliance professional before publishing high-risk claims.";
+export const CLAIM_DISCLAIMER = "ClaimGuard provides rules-engine risk flags and educational guidance only. It is not legal, regulatory, or medical advice, does not guarantee compliance, and is not a substitute for qualified professional review before you publish.";
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

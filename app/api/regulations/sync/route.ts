@@ -14,7 +14,7 @@ export async function POST() {
     return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
   }
 
-  const limit = checkRateLimit(`regulations:${rateLimitKey}`, 3, 5 * 60_000);
+  const limit = await checkRateLimit(`regulations:${rateLimitKey}`, 3, 5 * 60_000);
   if (!limit.allowed) return NextResponse.json({ error: "Official sources were synced recently. Please try again in a few minutes." }, { status: 429 });
 
   try {

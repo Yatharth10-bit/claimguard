@@ -18,6 +18,7 @@ export function FeedbackForm() {
       const response = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ category, message }),
       });
       const body = await response.json();

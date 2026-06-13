@@ -5,19 +5,19 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
 const profileSchema = z.object({
-  brandName: z.string(),
-  sector: z.string(),
-  productType: z.string(),
-  commonClaims: z.string(),
-  ingredients: z.string(),
-  salesRegions: z.array(z.string()),
-  salesChannels: z.array(z.string()),
-  mainConcern: z.string(),
-  complianceLevel: z.string(),
-  firstClaim: z.string(),
+  brandName: z.string().trim().max(200),
+  sector: z.string().trim().max(100),
+  productType: z.string().trim().max(200),
+  commonClaims: z.string().trim().max(5000),
+  ingredients: z.string().trim().max(5000),
+  salesRegions: z.array(z.string().trim().max(100)).max(50),
+  salesChannels: z.array(z.string().trim().max(100)).max(50),
+  mainConcern: z.string().trim().max(500),
+  complianceLevel: z.string().trim().max(100),
+  firstClaim: z.string().trim().max(5000),
   onboardingCompleted: z.boolean(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  createdAt: z.string().trim().max(50),
+  updatedAt: z.string().trim().max(50),
 });
 
 export async function GET() {

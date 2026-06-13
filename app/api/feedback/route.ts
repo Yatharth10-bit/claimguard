@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getClientIp } from "@/lib/request";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
@@ -13,12 +15,28 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid feedback.", details: parsed.error.flatten() }, { status: 400 });
 
   const supabase = await getSupabaseServer();
-  const userId = supabase ? (await supabase.auth.getUser()).data.user?.id ?? null : null;
-  const admin = getSupabaseAdmin();
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
+  }
 
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
+
+  const limit = await checkRateLimit(
+    `feedback:${user.id}:${getClientIp(request)}`,
+    Number(process.env.FEEDBACK_RATE_LIMIT || 5),
+    15 * 60_000,
+  );
+  if (!limit.allowed) {
+    return NextResponse.json({ error: "Too many feedback submissions. Please try again later." }, { status: 429 });
+  }
+
+  const admin = getSupabaseAdmin();
   if (admin) {
     await admin.from("feedback_messages").insert({
-      user_id: userId,
+      user_id: user.id,
       category: parsed.data.category,
       message: parsed.data.message,
     });

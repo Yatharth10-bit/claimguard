@@ -41,14 +41,22 @@ export async function POST(request: Request) {
     const supabase = await getSupabaseServer();
 
     if (!supabase) {
+      if (process.env.NODE_ENV === "production") {
+        return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
+      }
       const analysis = analyzeClaim(input);
-      return NextResponse.json({ analysis: responseRow(input, analysis), provider: "rules", saved: false, warning: "Supabase is unavailable. Save this analysis locally." });
+      return NextResponse.json({
+        analysis: responseRow(input, analysis),
+        provider: "rules",
+        saved: false,
+        warning: "Development mode only: Supabase is unavailable. Save this analysis locally.",
+      });
     }
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
 
-    const burst = checkRateLimit(`${user.id}:burst`, Number(process.env.ANALYSIS_RATE_LIMIT || 40), 60_000);
+    const burst = await checkRateLimit(`${user.id}:burst`, Number(process.env.ANALYSIS_RATE_LIMIT || 40), 60_000);
     if (!burst.allowed) return NextResponse.json({ error: "Too many analyses. Please try again shortly." }, { status: 429 });
 
     if (!input.saveOnly) {
