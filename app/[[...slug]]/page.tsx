@@ -1068,8 +1068,15 @@ function ClaimChecker() {
 
   useEffect(() => {
     const productId = searchParams.get("product");
-    if (productId) setProduct(productId);
-  }, [searchParams]);
+    if (!productId) return;
+    if (products.some((item) => item.id === productId)) {
+      setProduct(productId);
+    } else if (!products.length) {
+      setProduct(productId);
+    } else {
+      setProduct("");
+    }
+  }, [searchParams, products]);
 
   const buildAnalysisInput = () => {
     const selected = products.find((item) => item.id === product);

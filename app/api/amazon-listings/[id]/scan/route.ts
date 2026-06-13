@@ -7,10 +7,11 @@ type Params = { params: Promise<{ id: string }> };
 export async function POST(_request: Request, { params }: Params) {
   const auth = await requireUser();
   if ("error" in auth) return auth.error;
-  const { supabase, user } = auth;
+  const { admin, user } = auth;
+  if (!admin) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
   const { id } = await params;
 
-  const { data: listing } = await supabase
+  const { data: listing } = await admin
     .from("amazon_listings")
     .select("*, products(category, ingredients, market)")
     .eq("id", id)
@@ -28,7 +29,7 @@ export async function POST(_request: Request, { params }: Params) {
     market: productRow?.market || "United States FDA + FTC",
   };
 
-  const { data: labelScan } = await supabase
+  const { data: labelScan } = await admin
     .from("label_scans")
     .select("claims_found")
     .eq("product_id", listing.product_id)
@@ -52,7 +53,7 @@ export async function POST(_request: Request, { params }: Params) {
 
   const scannedAt = new Date().toISOString();
 
-  const { data: scanRow, error: scanError } = await supabase
+  const { data: scanRow, error: scanError } = await admin
     .from("amazon_scan_results")
     .insert({
       amazon_listing_id: listing.id,
@@ -66,13 +67,13 @@ export async function POST(_request: Request, { params }: Params) {
 
   if (scanError) return NextResponse.json({ error: scanError.message }, { status: 500 });
 
-  await supabase
+  await admin
     .from("amazon_listings")
     .update({ last_scanned_at: scannedAt })
     .eq("id", listing.id);
 
   if (result.overall_risk === "high") {
-    await supabase.from("notifications").insert({
+    await admin.from("notifications").insert({
       user_id: user.id,
       type: "amazon_listing_high_risk",
       title: "Amazon listing high risk",

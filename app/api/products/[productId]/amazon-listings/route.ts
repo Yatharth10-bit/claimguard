@@ -1,26 +1,22 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/apiAuth";
+import { fetchOwnedProduct } from "@/lib/ownedProduct";
 
 type Params = { params: Promise<{ productId: string }> };
 
 export async function GET(_request: Request, { params }: Params) {
   const auth = await requireUser();
   if ("error" in auth) return auth.error;
-  const { supabase, user } = auth;
+  const { admin, user } = auth;
+  if (!admin) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
+
   const { productId } = await params;
 
-  const { data: product } = await supabase
-    .from("products")
-    .select("id")
-    .eq("id", productId)
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const { product, error: productError } = await fetchOwnedProduct(admin, user.id, productId, "id");
+  if (productError) return NextResponse.json({ error: productError }, { status: 500 });
+  if (!product) return NextResponse.json({ error: "Product not found." }, { status: 404 });
 
-  if (!product) {
-    return NextResponse.json({ error: "Product not found." }, { status: 404 });
-  }
-
-  const { data: listings, error } = await supabase
+  const { data: listings, error } = await admin
     .from("amazon_listings")
     .select("*")
     .eq("product_id", productId)
@@ -33,7 +29,7 @@ export async function GET(_request: Request, { params }: Params) {
   let latestScans: Record<string, unknown> = {};
 
   if (listingIds.length) {
-    const { data: scans } = await supabase
+    const { data: scans } = await admin
       .from("amazon_scan_results")
       .select("*")
       .in("amazon_listing_id", listingIds)

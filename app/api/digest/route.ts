@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import { buildWeeklyDigest } from "@/lib/weeklyDigest";
 import { getUsageSnapshot } from "@/lib/usage";
-import { getSupabaseServer } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/apiAuth";
 import { loadBrandProfileServer } from "@/lib/brandProfileServer";
 
 export async function GET() {
-  const supabase = await getSupabaseServer();
-  if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
+  const { admin, user } = auth;
+  if (!admin) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
 
   const usage = await getUsageSnapshot(user.id);
   if (!usage.limits.weeklyDigest) {
@@ -21,9 +20,9 @@ export async function GET() {
   }
 
   const [{ data: products }, { data: claims }, { data: regulations }, profile] = await Promise.all([
-    supabase.from("products").select("id, name, category, claims_text").eq("user_id", user.id),
-    supabase.from("claims").select("id, original_text, risk_level, risky_phrases, status, created_at, product_id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(40),
-    supabase.from("regulation_updates").select("id, organization, category, title, summary, official_url").order("date_found", { ascending: false }).limit(12),
+    admin.from("products").select("id, name, category, claims_text").eq("user_id", user.id),
+    admin.from("claims").select("id, original_text, risk_level, risky_phrases, status, created_at, product_id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(40),
+    admin.from("regulation_updates").select("id, organization, category, title, summary, official_url").order("date_found", { ascending: false }).limit(12),
     loadBrandProfileServer(user.id),
   ]);
 

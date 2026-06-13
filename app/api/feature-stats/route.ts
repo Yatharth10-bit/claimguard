@@ -4,15 +4,16 @@ import { requireUser } from "@/lib/apiAuth";
 export async function GET() {
   const auth = await requireUser();
   if ("error" in auth) return auth.error;
-  const { supabase, user } = auth;
+  const { admin, user } = auth;
+  if (!admin) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
 
   const [{ data: listings }, { data: scans }, { data: posts }, { data: labels }, { data: substantiation }, { data: competitors }] = await Promise.all([
-    supabase.from("amazon_listings").select("id").eq("user_id", user.id),
-    supabase.from("amazon_scan_results").select("overall_risk, amazon_listing_id, amazon_listings!inner(user_id)").eq("amazon_listings.user_id", user.id),
-    supabase.from("social_posts").select("scan_status, social_connections!inner(user_id)").eq("social_connections.user_id", user.id),
-    supabase.from("label_scans").select("id").eq("user_id", user.id),
-    supabase.from("substantiation_entries").select("id").eq("user_id", user.id).is("deleted_at", null),
-    supabase.from("competitor_trackers").select("id").eq("user_id", user.id).eq("is_active", true),
+    admin.from("amazon_listings").select("id").eq("user_id", user.id),
+    admin.from("amazon_scan_results").select("overall_risk, amazon_listing_id, amazon_listings!inner(user_id)").eq("amazon_listings.user_id", user.id),
+    admin.from("social_posts").select("scan_status, social_connections!inner(user_id)").eq("social_connections.user_id", user.id),
+    admin.from("label_scans").select("id").eq("user_id", user.id),
+    admin.from("substantiation_entries").select("id").eq("user_id", user.id).is("deleted_at", null),
+    admin.from("competitor_trackers").select("id").eq("user_id", user.id).eq("is_active", true),
   ]);
 
   const listingIds = new Set((listings || []).map((l) => l.id));

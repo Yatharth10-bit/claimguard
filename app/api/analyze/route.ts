@@ -3,8 +3,9 @@ import { z } from "zod";
 import { analyzeClaim } from "@/lib/analyzeClaim";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { assertCanScan, getUsageSnapshot, releaseClaimScans, reserveClaimScans } from "@/lib/usage";
+import { requireUser } from "@/lib/apiAuth";
+import { fetchOwnedProduct } from "@/lib/ownedProduct";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { getSupabaseServer } from "@/lib/supabase/server";
 
 const contextTypes = ["Label", "Website", "Amazon listing", "Ad copy", "Social media", "Influencer script"] as const;
 const inputSchema = z.object({
@@ -39,23 +40,22 @@ export async function POST(request: Request) {
     const parsed = inputSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Invalid claim input.", details: parsed.error.flatten() }, { status: 400 });
     let input = parsed.data;
-    const supabase = await getSupabaseServer();
-
-    if (!supabase) {
-      if (process.env.NODE_ENV === "production") {
-        return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
+    const auth = await requireUser();
+    if ("error" in auth) {
+      if (process.env.NODE_ENV !== "production") {
+        const analysis = analyzeClaim(input);
+        return NextResponse.json({
+          analysis: responseRow(input, analysis),
+          provider: "rules",
+          saved: false,
+          warning: "Development mode only: Supabase is unavailable. Save this analysis locally.",
+        });
       }
-      const analysis = analyzeClaim(input);
-      return NextResponse.json({
-        analysis: responseRow(input, analysis),
-        provider: "rules",
-        saved: false,
-        warning: "Development mode only: Supabase is unavailable. Save this analysis locally.",
-      });
+      return auth.error;
     }
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    const { admin, user } = auth;
+    if (!admin) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
 
     const burst = await checkRateLimit(`${user.id}:burst`, Number(process.env.ANALYSIS_RATE_LIMIT || 40), 60_000);
     if (!burst.allowed) return NextResponse.json({ error: "Too many analyses. Please try again shortly." }, { status: 429 });
@@ -77,35 +77,30 @@ export async function POST(request: Request) {
       reservedScan = true;
     }
 
+    let linkedProductId: string | null = input.productId || null;
     if (input.productId) {
-      const { data: product } = await supabase
-        .from("products")
-        .select("id, category, ingredients, market")
-        .eq("id", input.productId)
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (!product) {
+      const { product, error: productError } = await fetchOwnedProduct(admin, user.id, input.productId);
+      if (productError) {
         if (reservedScan) await releaseClaimScans(user.id, 1);
-        return NextResponse.json({ error: "Product not found." }, { status: 404 });
+        return NextResponse.json({ error: productError }, { status: 500 });
       }
-      input = {
-        ...input,
-        productCategory: product.category,
-        ingredients: product.ingredients || [],
-        market: product.market,
-      };
+      if (product) {
+        input = {
+          ...input,
+          productCategory: String(product.category),
+          ingredients: (product.ingredients as string[]) || [],
+          market: String(product.market),
+        };
+      } else {
+        linkedProductId = null;
+      }
     }
 
     const analysis = analyzeClaim(input);
     const row = responseRow(input, analysis);
-    const admin = getSupabaseAdmin();
-    if (!admin) {
-      if (reservedScan) await releaseClaimScans(user.id, 1);
-      return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
-    }
     const { data, error } = await admin.from("claims").insert({
       user_id: user.id,
-      product_id: input.productId || null,
+      product_id: linkedProductId,
       original_text: row.original_text,
       context_type: row.context_type,
       risk_level: row.risk_level,

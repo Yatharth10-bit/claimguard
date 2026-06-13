@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/apiAuth";
+import { fetchOwnedProduct } from "@/lib/ownedProduct";
 
 const createSchema = z.object({
   product_id: z.string().uuid(),
@@ -15,25 +16,19 @@ const createSchema = z.object({
 export async function POST(request: Request) {
   const auth = await requireUser();
   if ("error" in auth) return auth.error;
-  const { supabase, user } = auth;
+  const { admin, user } = auth;
+  if (!admin) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
 
   const parsed = createSchema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid listing input.", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { data: product } = await supabase
-    .from("products")
-    .select("id")
-    .eq("id", parsed.data.product_id)
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const { product, error: productError } = await fetchOwnedProduct(admin, user.id, parsed.data.product_id, "id");
+  if (productError) return NextResponse.json({ error: productError }, { status: 500 });
+  if (!product) return NextResponse.json({ error: "Product not found." }, { status: 404 });
 
-  if (!product) {
-    return NextResponse.json({ error: "Product not found." }, { status: 404 });
-  }
-
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from("amazon_listings")
     .insert({
       user_id: user.id,
