@@ -3,6 +3,7 @@ import { z } from "zod";
 import { analyzeClaim } from "@/lib/analyzeClaim";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { assertCanScan, getUsageSnapshot, releaseClaimScans, reserveClaimScans } from "@/lib/usage";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
 const contextTypes = ["Label", "Website", "Amazon listing", "Ad copy", "Social media", "Influencer script"] as const;
@@ -97,7 +98,12 @@ export async function POST(request: Request) {
 
     const analysis = analyzeClaim(input);
     const row = responseRow(input, analysis);
-    const { data, error } = await supabase.from("claims").insert({
+    const admin = getSupabaseAdmin();
+    if (!admin) {
+      if (reservedScan) await releaseClaimScans(user.id, 1);
+      return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
+    }
+    const { data, error } = await admin.from("claims").insert({
       user_id: user.id,
       product_id: input.productId || null,
       original_text: row.original_text,

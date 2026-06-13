@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
 export async function requireUser() {
@@ -10,5 +11,6 @@ export async function requireUser() {
   if (!user) {
     return { error: NextResponse.json({ error: "Authentication required." }, { status: 401 }) };
   }
-  return { supabase, user };
+  const admin = getSupabaseAdmin();
+  return { supabase, admin, user };
 }

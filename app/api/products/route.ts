@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { requireUser } from "@/lib/apiAuth";
 import { assertCanAddProduct } from "@/lib/usage";
-import { getSupabaseServer } from "@/lib/supabase/server";
 
 const inputSchema = z.object({
   name: z.string().trim().min(1).max(200),
@@ -13,11 +13,10 @@ const inputSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const supabase = await getSupabaseServer();
-  if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
+  const { admin, user } = auth;
+  if (!admin) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
 
   const parsed = inputSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: "Invalid product input.", details: parsed.error.flatten() }, { status: 400 });
@@ -27,7 +26,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: gate.message, usage: gate.snapshot, upgradeRequired: true }, { status: 402 });
   }
 
-  const { data, error } = await supabase.from("products").insert({
+  const { data, error } = await admin.from("products").insert({
     user_id: user.id,
     name: parsed.data.name,
     category: parsed.data.category,
