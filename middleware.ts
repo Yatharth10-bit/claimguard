@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { BRAND_ONBOARDING_ENABLED, isOnboardingComplete } from "@/lib/brandProfile";
 import { loadRemoteBrandProfile } from "@/lib/brandProfileRemote";
 
-const protectedRoutes = ["/dashboard", "/onboarding", "/products", "/claim-checker", "/copy-scanner", "/claims", "/regulations", "/impact", "/tasks", "/settings", "/reports", "/saved-claims"];
+const protectedRoutes = ["/dashboard", "/onboarding", "/products", "/claim-checker", "/copy-scanner", "/claims", "/regulations", "/impact", "/tasks", "/settings", "/reports", "/saved-claims", "/social", "/competitors"];
 const appRoutes = [...protectedRoutes];
 export const runtime = "nodejs";
 

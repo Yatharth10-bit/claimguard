@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Package } from "lucide-react";
 import { AmazonListingsTab } from "@/components/amazon/AmazonListingsTab";
+import { InfluencerTab } from "@/components/influencer/InfluencerTab";
+import { LabelScansTab } from "@/components/label/LabelScansTab";
+import { SubstantiationTab } from "@/components/substantiation/SubstantiationTab";
 import { useProducts } from "@/contexts/WorkspaceDataContext";
 
 const TABS = ["overview", "amazon", "label", "influencer", "substantiation"] as const;
@@ -64,15 +67,9 @@ export function ProductDetailPage({ productId }: { productId: string }) {
             </div>
           )}
           {tab === "amazon" && <AmazonListingsTab productId={productId} initialListingId={listingId} />}
-          {tab === "label" && (
-            <div className="surface bg-stone p-8 text-center text-sm text-muted">Label upload & Supplement Facts validator — coming in Feature 4.</div>
-          )}
-          {tab === "influencer" && (
-            <div className="surface bg-stone p-8 text-center text-sm text-muted">Influencer briefs & script review — coming in Feature 3.</div>
-          )}
-          {tab === "substantiation" && (
-            <div className="surface bg-stone p-8 text-center text-sm text-muted">Substantiation library — coming in Feature 5.</div>
-          )}
+          {tab === "label" && <LabelScansTab productId={productId} />}
+          {tab === "influencer" && <InfluencerTab productId={productId} />}
+          {tab === "substantiation" && <SubstantiationTab productId={productId} />}
         </div>
       </div>
     </div>

@@ -8,7 +8,7 @@ import {
   FileText, FlaskConical, Gauge, LayoutDashboard, Lightbulb, ListChecks, LoaderCircle, LogOut,
   Landmark, Menu, Package, Plus, Search, Settings, ShieldCheck, Sparkles, Trash2, TrendingUp,
   Upload, WandSparkles, AlertTriangle, CalendarDays, ChevronDown, Printer, ScanText,
-  UserRound, X, Zap, Sun, Moon, Contrast, Globe2
+  UserRound, X, Zap, Sun, Moon, Contrast, Globe2, Instagram, Target
 } from "lucide-react";
 import { BetaBadge } from "@/components/billing/BetaBadge";
 import { UsageMeter } from "@/components/billing/UsageMeter";
@@ -37,7 +37,12 @@ import {
 import { sectorToProductCategory, regionToMarket } from "@/lib/sectorMapping";
 import type { ClaimExample } from "@/lib/claimLearnings";
 import { AmazonRiskCard } from "@/components/dashboard/AmazonRiskCard";
+import { ComplianceScoreCard } from "@/components/dashboard/ComplianceScoreCard";
+import { FeatureStatsGrid } from "@/components/dashboard/FeatureStatsGrid";
 import { PersonalizedDashboardHeader, PersonalizedDashboardSections } from "@/components/dashboard/PersonalizedDashboardLayer";
+import { SocialMonitorPage } from "@/components/social/SocialMonitorPage";
+import { CompetitorsPage } from "@/components/competitors/CompetitorsPage";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { ProductDetailPage } from "@/components/products/ProductDetailPage";
 import { BrandProfileSettings } from "@/components/onboarding/BrandProfileSettings";
 import { OnboardingPage } from "@/components/onboarding/OnboardingPage";
@@ -232,6 +237,8 @@ const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/products", label: "Products", icon: Package },
   { href: "/claim-checker", label: "Claim Checker", icon: Sparkles },
+  { href: "/social", label: "Social Monitor", icon: Instagram },
+  { href: "/competitors", label: "Competitors", icon: Target },
   { href: "/copy-scanner", label: "Copy Scanner", icon: ScanText },
   { href: "/claims", label: "Saved Claims", icon: ClipboardCheck },
   { href: "/regulations", label: "Regulations", icon: Landmark },
@@ -522,7 +529,10 @@ function AppShell({ children, title, subtitle, action }: { children: React.React
               <h1 className="text-2xl font-extrabold tracking-[-.04em] text-ink sm:text-[1.85rem]">{title}</h1>
               {subtitle && <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{subtitle}</p>}
             </div>
-            {action}
+            <div className="flex items-center gap-3">
+              <NotificationBell />
+              {action}
+            </div>
           </div>
           {children}
         </div>
@@ -643,7 +653,11 @@ function Dashboard() {
         <Metric label="Open tasks" value={loading ? "..." : String(openTasks)} icon={ListChecks} tone="bg-orange-50 text-orange-500" note="Workflow board" />
       </div>
       <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <ComplianceScoreCard />
         <AmazonRiskCard />
+      </div>
+      <div className="mt-5">
+        <FeatureStatsGrid />
       </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.5fr_.8fr]">
         <section className="surface p-5 sm:p-6">
@@ -1670,6 +1684,22 @@ function ClaimLibrary() {
           </article>
         )) : <div className="surface"><Empty icon={ClipboardCheck} title="No claims match this filter" text="Scan or check copy to add claims to the library." action="/copy-scanner" actionText="Open copy scanner" /></div>}
       </div>
+    </AppShell>
+  );
+}
+
+function SocialMonitor() {
+  return (
+    <AppShell title="Social Monitor" subtitle="Scan Instagram and TikTok captions for FTC disclosure and FDA claim risk.">
+      <SocialMonitorPage />
+    </AppShell>
+  );
+}
+
+function Competitors() {
+  return (
+    <AppShell title="Competitor Tracker" subtitle="Monitor competitor claims and detect high-risk copy in your category.">
+      <CompetitorsPage />
     </AppShell>
   );
 }
@@ -2979,6 +3009,8 @@ export default function Page() {
   if (path === "/regulations") return <Regulations />;
   if (path === "/impact") return <ProductImpact />;
   if (path === "/copy-scanner") return <CopyScanner />;
+  if (path === "/social") return <SocialMonitor />;
+  if (path === "/competitors") return <Competitors />;
   if (path === "/tasks") return <TasksBoard />;
   if (path === "/settings") return <SettingsPage />;
   if (path === "/reports") return <Reports />;
