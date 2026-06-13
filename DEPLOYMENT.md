@@ -51,6 +51,121 @@ Open `http://localhost:3000`.
 3. Deploy.
 4. Confirm the Supabase site URL and auth settings include your Vercel domain.
 
+## Hostinger Deployment
+
+ClaimGuard is a full Next.js app with API routes, middleware, and Supabase auth. It **cannot** run on plain PHP/shared hosting alone. Use one of these Hostinger options:
+
+| Plan | Works? | Notes |
+|------|--------|-------|
+| **VPS** | Yes (recommended) | Node.js + PM2 + Nginx — full control |
+| **Web Apps / Node.js hosting** | Yes | Connect GitHub repo, set build/start commands |
+| **Shared Web Hosting** | No | No persistent Node.js server for API routes |
+
+### Option A — Hostinger VPS (recommended)
+
+#### 1. Server setup (one time)
+
+SSH into your VPS, then run:
+
+```bash
+# Node.js 20 LTS
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs nginx git
+
+# PM2 process manager
+sudo npm install -g pm2
+
+# App directory
+sudo mkdir -p /var/www/claimguard
+sudo chown -R $USER:$USER /var/www/claimguard
+cd /var/www/claimguard
+git clone https://github.com/Yatharth10-bit/claimguard.git .
+```
+
+#### 2. Environment file
+
+```bash
+cp hostinger/env.production.example .env
+nano .env   # paste your real Supabase + Dodo keys; set YOUR_DOMAIN.com
+```
+
+#### 3. First deploy
+
+```bash
+chmod +x scripts/deploy-hostinger.sh
+./scripts/deploy-hostinger.sh
+pm2 startup    # follow the printed command so the app survives reboots
+```
+
+#### 4. Nginx + SSL
+
+```bash
+# Replace YOUR_DOMAIN.com in hostinger/nginx.conf, then:
+sudo cp hostinger/nginx.conf /etc/nginx/sites-available/claimguard
+sudo ln -sf /etc/nginx/sites-available/claimguard /etc/nginx/sites-enabled/claimguard
+sudo nginx -t && sudo systemctl reload nginx
+
+# Free SSL (Hostinger VPS or Certbot)
+sudo apt-get install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d YOUR_DOMAIN.com -d www.YOUR_DOMAIN.com
+```
+
+#### 5. Point your domain (Hostinger DNS)
+
+In **hPanel → Domains → DNS / Nameservers**:
+
+| Type | Name | Value |
+|------|------|-------|
+| A | `@` | Your VPS IP address |
+| A | `www` | Your VPS IP address |
+
+DNS can take up to 24 hours; usually much faster.
+
+#### 6. Future deploys
+
+```bash
+ssh your-user@your-vps-ip
+cd /var/www/claimguard && ./scripts/deploy-hostinger.sh
+```
+
+### Option B — Hostinger Web Apps (Node.js panel)
+
+If your plan includes **Websites → Add Website → Node.js Web App**:
+
+1. Connect GitHub repo: `Yatharth10-bit/claimguard`
+2. Branch: `main`
+3. Build command: `npm ci && npm run build:hostinger`
+4. Start command: `npm run start:hostinger`
+5. Node version: **20**
+6. Add all environment variables from `hostinger/env.production.example`
+7. Set `HOSTINGER=1` and `NODE_ENV=production` in the panel
+8. Attach your custom domain in the Hostinger panel
+
+### After going live on Hostinger — update these services
+
+Replace `YOUR_DOMAIN.com` with your real domain everywhere:
+
+**Supabase → Authentication → URL Configuration**
+
+- Site URL: `https://YOUR_DOMAIN.com`
+- Redirect URLs:
+  - `https://YOUR_DOMAIN.com/auth/callback`
+  - `http://localhost:3002/auth/callback` (local dev)
+
+**Google Cloud OAuth** — no change needed (redirect stays on Supabase).
+
+**Dodo Payments**
+
+- Webhook URL: `https://YOUR_DOMAIN.com/api/webhooks/dodo`
+- `DODO_PAYMENTS_RETURN_URL`: `https://YOUR_DOMAIN.com/settings?billing=success`
+
+### Hostinger files in this repo
+
+- `hostinger/ecosystem.config.cjs` — PM2 process config
+- `hostinger/nginx.conf` — reverse proxy template
+- `hostinger/env.production.example` — production env template
+- `scripts/deploy-hostinger.sh` — pull, build, restart script
+
 ## Notes
 
 - Claim analysis is fully deterministic and does not use an AI API.

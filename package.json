@@ -6,6 +6,8 @@
     "dev": "next dev -p 3002",
     "build": "next build",
     "start": "next start",
+    "start:hostinger": "next start -H 0.0.0.0 -p 3000",
+    "build:hostinger": "next build",
     "lint": "next lint",
     "test:claims": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/claim-regression.ps1",
     "test:products": "tsx scripts/run-product-regression.ts",
