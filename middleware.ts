@@ -1,7 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
-import { BRAND_ONBOARDING_ENABLED } from "@/lib/brandProfile";
-import { onboardingCompleteFromRow } from "@/lib/authRouting";
+import { BRAND_ONBOARDING_ENABLED, isOnboardingComplete } from "@/lib/brandProfile";
+import { loadRemoteBrandProfile } from "@/lib/brandProfileRemote";
 
 const protectedRoutes = ["/dashboard", "/onboarding", "/products", "/claim-checker", "/copy-scanner", "/claims", "/regulations", "/impact", "/tasks", "/settings", "/reports", "/saved-claims"];
 const appRoutes = [...protectedRoutes];
@@ -11,16 +12,18 @@ function matchesRoute(pathname: string, routes: string[]) {
   return routes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }
 
-async function onboardingCompleteForUser(
-  supabase: ReturnType<typeof createServerClient>,
-  userId: string,
-) {
-  const { data } = await supabase
-    .from("profiles")
-    .select("brand_compliance_profile")
-    .eq("id", userId)
-    .maybeSingle();
-  return onboardingCompleteFromRow(data);
+function getSupabaseAdmin() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
+async function onboardingCompleteForUser(userId: string) {
+  const admin = getSupabaseAdmin();
+  if (!admin) return false;
+  const profile = await loadRemoteBrandProfile(admin, userId);
+  return isOnboardingComplete(profile);
 }
 
 export async function middleware(request: NextRequest) {
@@ -63,7 +66,7 @@ export async function middleware(request: NextRequest) {
 
   if (user) {
     const onboardingDone = BRAND_ONBOARDING_ENABLED
-      ? await onboardingCompleteForUser(supabase, user.id)
+      ? await onboardingCompleteForUser(user.id)
       : true;
 
     if (["/login", "/signup"].includes(pathname)) {
