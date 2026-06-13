@@ -69,7 +69,11 @@ export function OnboardingPage() {
       setStepIndex((i) => i + 1);
       return;
     }
-    await completeOnboarding(draft);
+    const saved = await completeOnboarding(draft);
+    if (!saved) {
+      setError("We saved your answers locally but could not sync them to your account. Check your connection and try again.");
+      return;
+    }
     router.push("/dashboard");
     router.refresh();
   };

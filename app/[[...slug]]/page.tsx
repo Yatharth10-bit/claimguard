@@ -35,8 +35,10 @@ import type { ClaimExample } from "@/lib/claimLearnings";
 import { PersonalizedDashboardHeader, PersonalizedDashboardSections } from "@/components/dashboard/PersonalizedDashboardLayer";
 import { BrandProfileSettings } from "@/components/onboarding/BrandProfileSettings";
 import { OnboardingPage } from "@/components/onboarding/OnboardingPage";
+import { useAuthSession } from "@/contexts/AuthContext";
 import { useBrandProfile } from "@/hooks/useBrandProfile";
 import { useUsage } from "@/hooks/useUsage";
+import { postAuthPath } from "@/lib/authRouting";
 import { BRAND_ONBOARDING_ENABLED, isOnboardingComplete, loadBrandProfile } from "@/lib/brandProfile";
 import { getSupabaseBrowser, isSupabaseConfigured } from "@/lib/supabase/client";
 import { analyzeClaim, CLAIM_DISCLAIMER } from "@/lib/analyzeClaim";
@@ -2316,6 +2318,7 @@ function AnimatedRiskRing({ value, label, color }: { value: number; label: strin
 type BillingCycle = "monthly" | "annual";
 
 function Landing() {
+  const { isLoggedIn, loading: authLoading } = useAuthSession();
   const [heroClaim, setHeroClaim] = useState("Boosts immunity and prevents illness.");
   const [heroResult, setHeroResult] = useState<ReturnType<typeof analyzeClaim> | null>(null);
   const [demoView, setDemoView] = useState<"products" | "risk" | "updates">("risk");
@@ -2323,6 +2326,7 @@ function Landing() {
   const [navCompact, setNavCompact] = useState(false);
   const [pricingRegion, setPricingRegion] = useState<PricingRegionCode>("US");
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+  const [clientReady, setClientReady] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("claimguard-landing-theme");
@@ -2337,6 +2341,10 @@ function Landing() {
       if (detectedRegion && detectedRegion in PRICING_REGIONS) setPricingRegion(detectedRegion as PricingRegionCode);
       else if (["AT", "BE", "CY", "DE", "EE", "ES", "FI", "FR", "GR", "HR", "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PT", "SI", "SK"].includes(detectedRegion)) setPricingRegion("EU");
     }
+    setClientReady(true);
+  }, []);
+
+  useEffect(() => {
     const onScroll = () => setNavCompact(window.scrollY > 36);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -2375,7 +2383,7 @@ function Landing() {
   };
 
   return (
-    <div className="landing-motion min-h-screen bg-stone" data-theme={theme}>
+    <div className="landing-motion min-h-screen bg-stone" data-theme={theme} suppressHydrationWarning>
       <LandingMotion />
       <header className={`landing-nav sticky top-0 z-40 ${navCompact ? "is-compact" : ""}`}>
         <div className="nav-inner mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-6">
@@ -2386,7 +2394,7 @@ function Landing() {
           <a href="#how">How it works</a>
           <a href="#pricing">Pricing</a>
           <a href="#resources">Resources</a>
-          <Link href="/login">Log in</Link>
+          {!authLoading && !isLoggedIn && <Link href="/login">Log in</Link>}
         </nav>
         <div className="flex items-center gap-2">
           <div className="theme-switcher flex rounded-full border border-black/[.08] bg-white/70 p-0.5 sm:p-1">
@@ -2394,7 +2402,11 @@ function Landing() {
               <button key={value} aria-label={`${value} theme`} onClick={() => setTheme(value)} className={`grid h-7 w-7 place-items-center rounded-full sm:h-8 sm:w-8 ${theme === value ? "bg-ink text-white shadow-sm" : "text-muted hover:text-ink"}`}><Icon size={13} /></button>
             ))}
           </div>
-          <Link href="/signup" className="primary !rounded-full !px-3 !py-2 sm:!px-5">Start <span className="hidden sm:inline">Free</span></Link>
+          {!authLoading && (
+            isLoggedIn
+              ? <Link href="/dashboard" className="primary !rounded-full !px-3 !py-2 sm:!px-5">Dashboard</Link>
+              : <Link href="/signup" className="primary !rounded-full !px-3 !py-2 sm:!px-5">Start <span className="hidden sm:inline">Free</span></Link>
+          )}
         </div>
         </div>
       </header>
@@ -2409,8 +2421,8 @@ function Landing() {
             <p className="mt-6 max-w-[640px] text-base leading-7 text-muted sm:text-lg sm:leading-8">ClaimGuard watches regulation updates, checks risky product claims, and shows exactly what to fix before your food, supplement, or wellness brand gets into trouble.</p>
             <div className="mt-6 rounded-2xl border border-black/[.08] bg-white p-2 shadow-[0_16px_38px_rgba(16,24,45,.08)]">
               <div className="flex gap-2">
-                <input aria-label="Quick claim check" value={heroClaim} onChange={(event) => setHeroClaim(event.target.value)} onKeyDown={(event) => event.key === "Enter" && checkHeroClaim()} className="min-w-0 flex-1 rounded-xl bg-stone px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-200" />
-                <button onClick={checkHeroClaim} disabled={!heroClaim.trim()} className="primary shrink-0 !px-4"><Sparkles size={16} /><span className="hidden sm:inline">Check</span></button>
+                <input aria-label="Quick claim check" autoComplete="off" value={heroClaim} onChange={(event) => setHeroClaim(event.target.value)} onKeyDown={(event) => event.key === "Enter" && checkHeroClaim()} className="min-w-0 flex-1 rounded-xl bg-stone px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-200" suppressHydrationWarning />
+                <button type="button" onClick={checkHeroClaim} disabled={!heroClaim.trim()} className="primary shrink-0 !px-4" suppressHydrationWarning><Sparkles size={16} /><span className="hidden sm:inline">Check</span></button>
               </div>
               {heroResult && (
                 <div className="mt-2 flex items-center gap-3 rounded-xl bg-stone px-3 py-2.5 text-xs">
@@ -2660,23 +2672,32 @@ function Landing() {
               </div>
               <h2 className="mt-4 text-3xl font-extrabold tracking-[-.04em] sm:text-4xl">Consultants charge $300/hr. ClaimGuard starts at $39/mo.</h2>
               <p className="mt-4 text-sm leading-7 text-muted">{PRICE_ANCHOR_COPY} Plans are locally priced for your market.</p>
-              {pricingRegion === "US" && <p className="mt-3 rounded-full bg-mint px-4 py-2 text-xs font-semibold text-safe">{FOUNDING_OFFER_COPY}</p>}
+              {clientReady && pricingRegion === "US" && <p className="mt-3 rounded-full bg-mint px-4 py-2 text-xs font-semibold text-safe">{FOUNDING_OFFER_COPY}</p>}
             </div>
             <div className="mx-auto mt-8 flex max-w-3xl flex-col items-center justify-between gap-4 rounded-2xl border border-black/[.08] bg-stone p-3 sm:flex-row">
-              <label className="relative flex w-full items-center gap-2 sm:w-auto">
-                <Globe2 className="pointer-events-none absolute left-3 text-[#14a995]" size={16} />
-                <select aria-label="Pricing country and currency" value={pricingRegion} onChange={(event) => setPricingRegion(event.target.value as PricingRegionCode)} className="w-full appearance-none rounded-xl border border-black/[.08] bg-white py-2.5 pl-10 pr-10 text-sm font-bold outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 sm:w-auto">
-                  {Object.entries(PRICING_REGIONS).map(([code, option]) => <option key={code} value={code}>{option.country} · {option.currency}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 text-muted" size={14} />
-              </label>
-              <div className="flex w-full rounded-xl border border-black/[.08] bg-white p-1 sm:w-auto">
-                {(["monthly", "annual"] as BillingCycle[]).map((cycle) => (
-                  <button key={cycle} onClick={() => setBillingCycle(cycle)} className={`flex-1 rounded-lg px-4 py-2 text-xs font-bold capitalize transition sm:flex-none ${billingCycle === cycle ? "bg-ink text-white shadow-sm" : "text-muted hover:text-ink"}`}>
-                    {cycle}{cycle === "annual" && <span className="ml-1.5 text-[#43dfc6]">-20%</span>}
-                  </button>
-                ))}
-              </div>
+              {clientReady ? (
+                <>
+                  <label className="relative flex w-full items-center gap-2 sm:w-auto">
+                    <Globe2 className="pointer-events-none absolute left-3 text-[#14a995]" size={16} />
+                    <select aria-label="Pricing country and currency" autoComplete="off" value={pricingRegion} onChange={(event) => setPricingRegion(event.target.value as PricingRegionCode)} className="w-full appearance-none rounded-xl border border-black/[.08] bg-white py-2.5 pl-10 pr-10 text-sm font-bold outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 sm:w-auto" suppressHydrationWarning>
+                      {Object.entries(PRICING_REGIONS).map(([code, option]) => <option key={code} value={code}>{option.country} · {option.currency}</option>)}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 text-muted" size={14} />
+                  </label>
+                  <div className="flex w-full rounded-xl border border-black/[.08] bg-white p-1 sm:w-auto">
+                    {(["monthly", "annual"] as BillingCycle[]).map((cycle) => (
+                      <button key={cycle} type="button" onClick={() => setBillingCycle(cycle)} className={`flex-1 rounded-lg px-4 py-2 text-xs font-bold capitalize transition sm:flex-none ${billingCycle === cycle ? "bg-ink text-white shadow-sm" : "text-muted hover:text-ink"}`} suppressHydrationWarning>
+                        {cycle}{cycle === "annual" && <span className="ml-1.5 text-[#43dfc6]">-20%</span>}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" aria-hidden>
+                  <div className="h-10 w-full rounded-xl bg-white sm:w-56" />
+                  <div className="h-10 w-full rounded-xl bg-white sm:w-44" />
+                </div>
+              )}
             </div>
             <div className="mt-12 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
               {PRICING_PLANS.map((plan) => {
@@ -2787,12 +2808,8 @@ function Auth({ signup = false }: { signup?: boolean }) {
   const [message, setMessage] = useState("");
 
   const resolvePostAuthPath = async () => {
-    const next = searchParams.get("next");
-    if (next) return next;
-    if (signup && BRAND_ONBOARDING_ENABLED) return "/onboarding";
-    if (!BRAND_ONBOARDING_ENABLED) return "/dashboard";
     const profile = await loadBrandProfile();
-    return isOnboardingComplete(profile) ? "/dashboard" : "/onboarding";
+    return postAuthPath(profile, { next: searchParams.get("next"), signup });
   };
 
   const handleSubmit = async () => {
@@ -2828,6 +2845,7 @@ function Auth({ signup = false }: { signup?: boolean }) {
         setError(signUpError.message);
       } else {
         if (data.session) {
+          await loadBrandProfile(data.user?.id);
           router.push(await resolvePostAuthPath());
           router.refresh();
         } else {
@@ -2835,10 +2853,11 @@ function Auth({ signup = false }: { signup?: boolean }) {
         }
       }
     } else {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       if (signInError) {
         setError(signInError.message);
       } else {
+        await loadBrandProfile(signInData.user?.id);
         router.push(await resolvePostAuthPath());
         router.refresh();
       }

@@ -99,6 +99,18 @@ export async function resolveUserId(): Promise<string | null> {
   return null;
 }
 
+function mergeProfiles(local: BrandComplianceProfile | null, remote: BrandComplianceProfile | null): BrandComplianceProfile | null {
+  if (remote?.onboardingCompleted) return { ...EMPTY_BRAND_PROFILE, ...remote };
+  if (local?.onboardingCompleted) return { ...EMPTY_BRAND_PROFILE, ...local };
+  if (remote?.brandName || remote?.sector) return { ...EMPTY_BRAND_PROFILE, ...remote };
+  if (local) return { ...EMPTY_BRAND_PROFILE, ...local };
+  return null;
+}
+
+function isNewer(left: BrandComplianceProfile, right: BrandComplianceProfile) {
+  return new Date(left.updatedAt || 0).getTime() >= new Date(right.updatedAt || 0).getTime();
+}
+
 export async function loadBrandProfile(userId?: string | null): Promise<BrandComplianceProfile | null> {
   const id = userId ?? (await resolveUserId());
   const localKey = id ? profileStorageKey(id) : DEV_PROFILE_KEY;
@@ -109,24 +121,41 @@ export async function loadBrandProfile(userId?: string | null): Promise<BrandCom
     return local;
   }
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("profiles")
     .select("brand_compliance_profile")
     .eq("id", id)
     .maybeSingle();
 
-  const remote = data?.brand_compliance_profile as BrandComplianceProfile | null;
-  if (remote?.onboardingCompleted) {
-    writeLocalProfile(localKey, remote);
-    return { ...EMPTY_BRAND_PROFILE, ...remote };
+  if (error) {
+    return local;
   }
-  return local;
+
+  const remote = data?.brand_compliance_profile as BrandComplianceProfile | null;
+  let best = mergeProfiles(local, remote);
+
+  if (local && remote && local.onboardingCompleted && remote.onboardingCompleted) {
+    best = isNewer(local, remote)
+      ? { ...EMPTY_BRAND_PROFILE, ...local }
+      : { ...EMPTY_BRAND_PROFILE, ...remote };
+  }
+
+  if (best) {
+    writeLocalProfile(localKey, best);
+  }
+
+  if (local?.onboardingCompleted && !remote?.onboardingCompleted) {
+    await saveBrandProfile(local, id, { skipRemoteMerge: true });
+  }
+
+  return best;
 }
 
 export async function saveBrandProfile(
   profile: BrandComplianceProfile,
   userId?: string | null,
-): Promise<void> {
+  options?: { skipRemoteMerge?: boolean },
+): Promise<{ ok: boolean; error?: string }> {
   const id = userId ?? (await resolveUserId());
   const localKey = id ? profileStorageKey(id) : DEV_PROFILE_KEY;
   const now = new Date().toISOString();
@@ -138,12 +167,25 @@ export async function saveBrandProfile(
   writeLocalProfile(localKey, payload);
 
   const supabase = getSupabaseBrowser();
-  if (!supabase || !id || !isSupabaseConfigured()) return;
+  if (!supabase || !id || !isSupabaseConfigured()) {
+    return { ok: true };
+  }
 
-  await supabase
+  const { data: { user } } = await supabase.auth.getUser();
+  const { error } = await supabase
     .from("profiles")
-    .update({ brand_compliance_profile: payload })
-    .eq("id", id);
+    .upsert({
+      id,
+      email: user?.email || null,
+      full_name: String(user?.user_metadata?.full_name || ""),
+      brand_compliance_profile: payload,
+    }, { onConflict: "id" });
+
+  if (error && !options?.skipRemoteMerge) {
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: !error };
 }
 
 export function getCheckFirstClaimHref(options: {

@@ -1,34 +1,39 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useAuthSession } from "@/contexts/AuthContext";
 import {
   BRAND_ONBOARDING_ENABLED,
   EMPTY_BRAND_PROFILE,
   isOnboardingComplete,
   loadBrandProfile,
-  resolveUserId,
   saveBrandProfile,
   type BrandComplianceProfile,
 } from "@/lib/brandProfile";
 
 export function useBrandProfile() {
+  const { user, loading: authLoading } = useAuthSession();
   const [profile, setProfile] = useState<BrandComplianceProfile | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(BRAND_ONBOARDING_ENABLED);
   const [saving, setSaving] = useState(false);
+  const userId = user?.id ?? null;
 
   const refresh = useCallback(async () => {
     if (!BRAND_ONBOARDING_ENABLED) {
       setLoading(false);
       return;
     }
+    if (authLoading) return;
+    if (!userId) {
+      setProfile(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const id = await resolveUserId();
-    setUserId(id);
-    const loaded = await loadBrandProfile(id);
+    const loaded = await loadBrandProfile(userId);
     setProfile(loaded);
     setLoading(false);
-  }, []);
+  }, [authLoading, userId]);
 
   useEffect(() => {
     void refresh();
@@ -54,10 +59,13 @@ export function useBrandProfile() {
         createdAt: profile?.createdAt || now,
         updatedAt: now,
       };
-      await updateProfile(next);
-      return next;
+      setSaving(true);
+      const result = await saveBrandProfile(next, userId);
+      if (result.ok) setProfile(next);
+      setSaving(false);
+      return result.ok ? next : null;
     },
-    [profile?.createdAt, updateProfile],
+    [profile?.createdAt, userId],
   );
 
   return {
