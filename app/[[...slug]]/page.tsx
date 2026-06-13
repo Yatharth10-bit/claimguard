@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { notFound, usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -36,7 +36,9 @@ import {
 } from "@/lib/pricing";
 import { sectorToProductCategory, regionToMarket } from "@/lib/sectorMapping";
 import type { ClaimExample } from "@/lib/claimLearnings";
+import { AmazonRiskCard } from "@/components/dashboard/AmazonRiskCard";
 import { PersonalizedDashboardHeader, PersonalizedDashboardSections } from "@/components/dashboard/PersonalizedDashboardLayer";
+import { ProductDetailPage } from "@/components/products/ProductDetailPage";
 import { BrandProfileSettings } from "@/components/onboarding/BrandProfileSettings";
 import { OnboardingPage } from "@/components/onboarding/OnboardingPage";
 import { useAuthSession } from "@/contexts/AuthContext";
@@ -639,6 +641,9 @@ function Dashboard() {
         <Metric label="Regulation updates" value={loading ? "..." : String(regulations.length)} icon={Landmark} tone="bg-purple-50 text-purple-500" note="Official sources" />
         <Metric label="Open tasks" value={loading ? "..." : String(openTasks)} icon={ListChecks} tone="bg-orange-50 text-orange-500" note="Workflow board" />
       </div>
+      <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <AmazonRiskCard />
+      </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.5fr_.8fr]">
         <section className="surface p-5 sm:p-6">
           <div className="mb-5 flex items-center justify-between">
@@ -721,7 +726,7 @@ function Products() {
       </div>
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {visible.map((product) => (
-          <Link href={`/claim-checker?product=${product.id}`} key={product.id} className="surface group p-5 transition hover:-translate-y-0.5 hover:shadow-lg">
+          <Link href={`/products/${product.id}`} key={product.id} className="surface group p-5 transition hover:-translate-y-0.5 hover:shadow-lg">
             {(() => {
               const unresolvedTasks = tasks.filter((task) => task.product === product.name && !["Fixed", "Approved"].includes(task.status)).length;
               const regulationMatches = impacts.filter((impact) => impact.product === product.name).length;
@@ -2926,8 +2931,24 @@ function Auth({ signup = false }: { signup?: boolean }) {
   );
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function ProductDetailRoute({ productId }: { productId: string }) {
+  return (
+    <AppShell title="Product" subtitle="Compliance workspace for this SKU.">
+      <Suspense fallback={<div className="surface p-8 text-sm text-muted">Loading...</div>}>
+        <ProductDetailPage productId={productId} />
+      </Suspense>
+    </AppShell>
+  );
+}
+
 export default function Page() {
   const path = usePathname();
+  const productDetailMatch = path.match(/^\/products\/([^/]+)$/);
+  if (productDetailMatch && UUID_RE.test(productDetailMatch[1])) {
+    return <ProductDetailRoute productId={productDetailMatch[1]} />;
+  }
 
   if (path === "/") return <Landing />;
   if (path === "/login") return <Auth />;
