@@ -152,7 +152,7 @@ export function WorkspaceDataProvider({ children }: { children: React.ReactNode 
       return;
     }
 
-    if (!force && cacheUserId === user.id && Date.now() - cacheTimestamp < CACHE_MS) {
+    if (!force && cacheUserId === user.id && Date.now() - cacheTimestamp < CACHE_MS && products.length > 0) {
       setLoading(false);
       return;
     }
@@ -172,66 +172,72 @@ export function WorkspaceDataProvider({ children }: { children: React.ReactNode 
     const localAudit = readAuditFallback();
     const localRegulations = readRegulationFallback();
 
-    const [
-      productsResult,
-      claimsResult,
-      tasksResult,
-      regulationsResult,
-      auditResult,
-    ] = await Promise.all([
-      supabase
-        .from("products")
-        .select("id, name, category, market, platforms, ingredients, claims_text, created_at")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("claims")
-        .select("id, original_text, context_type, risk_level, risk_score, risky_phrases, explanation, safer_rewrite, checklist, sources, status, created_at, product_id, products(name)")
-        .order("created_at", { ascending: false })
-        .limit(200),
-      supabase.from("tasks").select("*").order("created_at", { ascending: false }),
-      supabase.from("regulation_updates").select("*").order("date_found", { ascending: false }).limit(50),
-      supabase.from("audit_events").select("*").order("created_at", { ascending: false }).limit(30),
-    ]);
+    const workspaceResponse = await fetch("/api/workspace", { cache: "no-store" });
+    if (!workspaceResponse.ok) {
+      const body = await workspaceResponse.json().catch(() => ({})) as { error?: string };
+      const message = body.error || "Unable to load workspace data.";
+      setProductsError(message);
+      setClaimsError(message);
+      setProducts([]);
+      setClaims([]);
+      setLoading(false);
+      return;
+    }
 
-    if (productsResult.error) {
-      setProductsError(productsResult.error.message);
+    const workspace = await workspaceResponse.json() as {
+      products?: Record<string, unknown>[];
+      claims?: Record<string, unknown>[];
+      tasks?: Record<string, unknown>[];
+      regulations?: Record<string, unknown>[];
+      auditEvents?: Record<string, unknown>[];
+      errors?: {
+        products?: string | null;
+        claims?: string | null;
+        tasks?: string | null;
+        regulations?: string | null;
+        auditEvents?: string | null;
+      };
+    };
+
+    if (workspace.errors?.products) {
+      setProductsError(workspace.errors.products);
       setProducts([]);
     }
 
-    if (claimsResult.error) {
-      setClaimsError(claimsResult.error.message);
+    if (workspace.errors?.claims) {
+      setClaimsError(workspace.errors.claims);
       setClaims([]);
     }
 
-    const databaseClaims: ClaimAnalysis[] = claimsResult.error
+    const databaseClaims: ClaimAnalysis[] = workspace.errors?.claims
       ? []
-      : (claimsResult.data || []).map((row: Record<string, unknown>) => rowToAnalysis(row));
+      : (workspace.claims || []).map((row) => rowToAnalysis(row));
 
     const mergedClaims = [
       ...localClaims,
       ...databaseClaims.filter((claim) => !localClaims.some((local) => local.id === claim.id)),
     ];
 
-    const nextProducts = productsResult.error
+    const nextProducts = workspace.errors?.products
       ? []
-      : (productsResult.data || []).map((row: Record<string, unknown>) => enrichProduct(row, databaseClaims));
+      : (workspace.products || []).map((row) => enrichProduct(row, databaseClaims));
 
-    const databaseTasks: WorkflowTask[] = tasksResult.error
+    const databaseTasks: WorkflowTask[] = workspace.errors?.tasks
       ? []
-      : (tasksResult.data || []).map((row: Record<string, unknown>) => rowToTask(row));
+      : (workspace.tasks || []).map((row) => rowToTask(row));
 
     const mergedTasks = [
       ...localTasks,
       ...databaseTasks.filter((task) => !localTasks.some((local) => local.id === task.id)),
     ];
 
-    const nextRegulations = regulationsResult.data?.length
-      ? regulationsResult.data.map((row: Record<string, unknown>) => rowToRegulation(row))
+    const nextRegulations = workspace.regulations?.length
+      ? workspace.regulations.map((row) => rowToRegulation(row))
       : localRegulations.length
         ? localRegulations
         : demoRegulations;
 
-    const databaseAudit: AuditEvent[] = (auditResult.data || []).map((row: Record<string, unknown>) => ({
+    const databaseAudit: AuditEvent[] = (workspace.auditEvents || []).map((row) => ({
       id: String(row.id),
       action: String(row.action),
       detail: String(row.detail),
@@ -251,7 +257,7 @@ export function WorkspaceDataProvider({ children }: { children: React.ReactNode 
     cacheUserId = user.id;
     cacheTimestamp = Date.now();
     setLoading(false);
-  }, [authLoading, user, loadDevelopmentData]);
+  }, [authLoading, user, loadDevelopmentData, products.length]);
 
   useEffect(() => {
     void load();
