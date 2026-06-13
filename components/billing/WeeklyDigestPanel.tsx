@@ -3,20 +3,35 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, CalendarDays, ExternalLink, LoaderCircle, Sparkles } from "lucide-react";
+import { useUsage } from "@/hooks/useUsage";
 import type { DigestItem } from "@/lib/weeklyDigest";
 
 export function WeeklyDigestPanel() {
+  const { usage, loading: usageLoading } = useUsage();
   const [items, setItems] = useState<DigestItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [upgradeRequired, setUpgradeRequired] = useState(false);
 
   useEffect(() => {
+    if (usageLoading) return;
+    if (!usage?.limits.weeklyDigest) {
+      setUpgradeRequired(true);
+      setError("Weekly digest is available on Shield and Agency plans.");
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+
+    let active = true;
     const load = async () => {
       setLoading(true);
+      setError("");
+      setUpgradeRequired(false);
       try {
         const response = await fetch("/api/digest");
         const body = await response.json();
+        if (!active) return;
         if (response.status === 402) {
           setUpgradeRequired(true);
           setError(body.error || "Upgrade to Shield for weekly digest.");
@@ -25,13 +40,26 @@ export function WeeklyDigestPanel() {
         if (!response.ok) throw new Error(body.error || "Unable to load digest.");
         setItems(body.digest || []);
       } catch (requestError) {
+        if (!active) return;
         setError(requestError instanceof Error ? requestError.message : "Unable to load digest.");
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
-    void load();
-  }, []);
+
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [usageLoading, usage?.limits.weeklyDigest, usage?.plan]);
+
+  if (usageLoading) {
+    return <div className="surface p-5 text-sm text-muted">Checking plan access...</div>;
+  }
 
   if (loading) {
     return <div className="surface p-5 text-sm text-muted"><LoaderCircle size={16} className="mr-2 inline animate-spin" />Loading weekly digest...</div>;

@@ -7,10 +7,15 @@ import type { UsageSnapshot } from "@/lib/usage";
 
 type UsageMeterProps = {
   usage: UsageSnapshot | null;
+  loading?: boolean;
   compact?: boolean;
 };
 
-export function UsageMeter({ usage, compact = false }: UsageMeterProps) {
+export function UsageMeter({ usage, loading = false, compact = false }: UsageMeterProps) {
+  if (loading) {
+    return <div className="rounded-2xl border border-black/[.06] bg-stone p-4 text-sm text-muted">Loading plan usage...</div>;
+  }
+
   if (!usage) return null;
 
   if (compact) {

@@ -40,6 +40,7 @@ import { PersonalizedDashboardHeader, PersonalizedDashboardSections } from "@/co
 import { BrandProfileSettings } from "@/components/onboarding/BrandProfileSettings";
 import { OnboardingPage } from "@/components/onboarding/OnboardingPage";
 import { useAuthSession } from "@/contexts/AuthContext";
+import { refreshWorkspaceData, useAudit, useClaims, useProducts, useRegulationFeed, useTasks } from "@/contexts/WorkspaceDataContext";
 import { useBrandProfile } from "@/hooks/useBrandProfile";
 import { useClientMounted } from "@/hooks/useClientMounted";
 import { useUsage } from "@/hooks/useUsage";
@@ -401,12 +402,14 @@ async function createWorkflowTask(input: Omit<WorkflowTask, "id" | "status"> & {
       }).select().single();
       if (!error && data) {
         await recordAudit("Task created", `${task.product}: ${task.claimIssue}`);
+        refreshWorkspaceData();
         return { ok: true, task: { ...task, id: data.id } };
       }
     }
   }
   writeTaskFallback([task, ...readTaskFallback()]);
   await recordAudit("Task created", `${task.product}: ${task.claimIssue}`);
+  refreshWorkspaceData();
   return { ok: true, task };
 }
 
@@ -579,131 +582,19 @@ function Metric({ label, value, icon: Icon, tone, note }: { label: string; value
   );
 }
 
-function useProducts() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const load = async () => {
-    const supabase = getSupabaseBrowser();
-    if (!supabase) {
-      setProducts(useDevelopmentFallback ? readFallback("claimguard-products", demoProducts) : []);
-      setError(useDevelopmentFallback ? "Supabase is not configured. Using development localStorage." : "Supabase is not configured.");
-      setLoading(false);
-      return;
-    }
-    const { data, error: dbError } = await supabase
-      .from("products")
-      .select("*, claims(risk_level, created_at)")
-      .order("created_at", { ascending: false });
-    if (dbError) {
-      setError(dbError.message);
-      setProducts([]);
-    } else {
-      setProducts((data || []).map(rowToProduct));
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  return { products, loading, error, reload: load };
-}
-
-function useClaims() {
-  const [claims, setClaims] = useState<ClaimAnalysis[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const load = async () => {
-    const supabase = getSupabaseBrowser();
-    if (!supabase) {
-      const developmentClaims = useDevelopmentFallback ? readFallback("claimguard-claims", demoClaims) : [];
-      setClaims([...readClaimFallback(), ...developmentClaims.filter((claim) => !readClaimFallback().some((local) => local.id === claim.id))]);
-      setError(useDevelopmentFallback ? "Supabase is not configured. Using development localStorage." : "Supabase is not configured.");
-      setLoading(false);
-      return;
-    }
-    const { data, error: dbError } = await supabase
-      .from("claims")
-      .select("*, products(name)")
-      .order("created_at", { ascending: false });
-    if (dbError) {
-      setError(dbError.message);
-      setClaims([]);
-    } else {
-      const localClaims = readClaimFallback();
-      const databaseClaims: ClaimAnalysis[] = (data || []).map(rowToAnalysis);
-      setClaims([...localClaims, ...databaseClaims.filter((claim) => !localClaims.some((local) => local.id === claim.id))]);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  return { claims, setClaims, loading, error, reload: load };
-}
-
-function useTasks() {
-  const [tasks, setTasks] = useState<WorkflowTask[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = async () => {
-    const local = readTaskFallback();
-    const supabase = getSupabaseBrowser();
-    if (!supabase) {
-      setTasks(local);
-      setLoading(false);
-      return;
-    }
-    const { data, error } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
-    if (error) setTasks(local);
-    else {
-      const databaseTasks: WorkflowTask[] = (data || []).map((row: any) => ({
-        id: row.id,
-        product: row.product_name,
-        claimIssue: row.claim_issue,
-        riskLevel: row.risk_level,
-        source: row.source,
-        dueDate: row.due_date || "",
-        status: row.status === "fixing" ? "Fixing" : row.status === "fixed" ? "Fixed" : row.status === "approved" ? "Approved" : row.status === "expert_review_needed" ? "Expert Review Needed" : "Needs Review",
-      }));
-      setTasks([...local, ...databaseTasks.filter((task) => !local.some((item) => item.id === task.id))]);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => { void load(); }, []);
-  return { tasks, setTasks, loading, reload: load };
-}
-
-function useAudit() {
-  const [events, setEvents] = useState<AuditEvent[]>([]);
-  useEffect(() => {
-    const load = async () => {
-      const local = readAuditFallback();
-      const supabase = getSupabaseBrowser();
-      if (!supabase) return setEvents(local);
-      const { data } = await supabase.from("audit_events").select("*").order("created_at", { ascending: false }).limit(30);
-      const databaseEvents: AuditEvent[] = (data || []).map((row: any) => ({ id: row.id, action: row.action, detail: row.detail, createdAt: row.created_at }));
-      setEvents([...local, ...databaseEvents.filter((event) => !local.some((item) => item.id === event.id))]);
-    };
-    void load();
-  }, []);
-  return events;
-}
-
 function Dashboard() {
-  const { usage } = useUsage();
+  const { usage, loading: usageLoading } = useUsage();
   const router = useRouter();
   const { products, loading: productsLoading, error: productsError } = useProducts();
   const { claims, loading: claimsLoading, error: claimsError } = useClaims();
+  const { tasks } = useTasks();
+  const regulations = useRegulationFeed();
   const { profile, loading: profileLoading, isComplete, enabled: onboardingEnabled } = useBrandProfile();
   const loading = productsLoading || claimsLoading;
+  const openTasks = useMemo(
+    () => tasks.filter((task) => !["Fixed", "Approved"].includes(task.status)).length,
+    [tasks],
+  );
   const counts = useMemo(() => ({
     products: products.length,
     high: claims.filter((claim) => claim.riskLevel === "high").length,
@@ -716,6 +607,14 @@ function Dashboard() {
     if (!isComplete) router.replace("/onboarding");
   }, [onboardingEnabled, profileLoading, isComplete, router]);
 
+  if (onboardingEnabled && profileLoading) {
+    return (
+      <AppShell title="Compliance snapshot" subtitle="Loading your workspace...">
+        <div className="surface p-8 text-sm text-muted">Preparing your dashboard...</div>
+      </AppShell>
+    );
+  }
+
   const personalizedHeader = onboardingEnabled && isComplete && profile
     ? PersonalizedDashboardHeader({ profile })
     : null;
@@ -727,7 +626,7 @@ function Dashboard() {
       action={<Link href="/claim-checker" className="primary"><Sparkles size={17} /> Check a claim</Link>}
     >
       <div className="mb-5 grid gap-5 xl:grid-cols-[1fr_1fr]">
-        <UsageMeter usage={usage} />
+        <UsageMeter usage={usage} loading={usageLoading} />
         <WeeklyDigestPanel />
       </div>
       {onboardingEnabled && isComplete && profile && <PersonalizedDashboardSections profile={profile} />}
@@ -737,8 +636,8 @@ function Dashboard() {
         <Metric label="High-risk claims" value={loading ? "..." : String(counts.high)} icon={AlertTriangle} tone="bg-red-50 text-red-500" note="Review recommended" />
         <Metric label="Medium-risk claims" value={loading ? "..." : String(counts.medium)} icon={TrendingUp} tone="bg-amber-50 text-amber-500" note="Needs careful wording" />
         <Metric label="Safe claims" value={loading ? "..." : String(counts.low)} icon={CheckCircle2} tone="bg-emerald-50 text-emerald-500" note="Best current fit" />
-        <Metric label="Regulation updates" value="5" icon={Landmark} tone="bg-purple-50 text-purple-500" note="Official sources" />
-        <Metric label="Tasks due" value={String(claims.filter((claim) => claim.status !== "Approved").length)} icon={ListChecks} tone="bg-orange-50 text-orange-500" note="Open workflow" />
+        <Metric label="Regulation updates" value={loading ? "..." : String(regulations.length)} icon={Landmark} tone="bg-purple-50 text-purple-500" note="Official sources" />
+        <Metric label="Open tasks" value={loading ? "..." : String(openTasks)} icon={ListChecks} tone="bg-orange-50 text-orange-500" note="Workflow board" />
       </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.5fr_.8fr]">
         <section className="surface p-5 sm:p-6">
@@ -903,6 +802,7 @@ function AddProduct() {
         const products = readFallback("claimguard-products", demoProducts);
         const item: Product = { id: crypto.randomUUID(), name: form.name.trim(), category: form.category, market: form.market, platforms: form.platforms, ingredients: form.ingredients, claims: form.claims, checks: 0, risk: "Safe", lastScanned: "Not scanned" };
         writeFallback("claimguard-products", [item, ...products]);
+        refreshWorkspaceData();
         router.push("/products");
         return;
       }
@@ -928,6 +828,7 @@ function AddProduct() {
       setSaving(false);
       return;
     }
+    refreshWorkspaceData();
     router.push("/products");
     router.refresh();
   };
@@ -1208,6 +1109,7 @@ function ClaimChecker() {
       const claims = readFallback("claimguard-claims", demoClaims);
       writeFallback("claimguard-claims", [analysis, ...claims.filter((item) => item.id !== analysis.id)]);
     }
+    refreshWorkspaceData();
     if (warning) setError(warning);
   };
 
@@ -1241,7 +1143,11 @@ function ClaimChecker() {
             product: products.find((item) => item.id === product)?.name || profile?.brandName || "Unassigned",
             storage: body.saved === false ? "local" as const : "workspace" as const,
           };
-          if (body.saved === false) persistLocalAnalysis(analysis, body.warning || "Analysis completed and was saved locally.");
+          if (body.saved === false) {
+            persistLocalAnalysis(analysis, body.warning || "Analysis completed and was saved locally.");
+          } else {
+            refreshWorkspaceData();
+          }
         } else if (response.status === 401 && useDevelopmentFallback) {
           usedClientFallback = true;
         } else if (response.status === 402) {
@@ -1863,21 +1769,6 @@ function CopyScanner() {
       ))}</div>
     </AppShell>
   );
-}
-
-function useRegulationFeed() {
-  const [updates, setUpdates] = useState<RegulationUpdate[]>(demoRegulations);
-  useEffect(() => {
-    const load = async () => {
-      const local = readRegulationFallback();
-      const supabase = getSupabaseBrowser();
-      if (!supabase) return setUpdates(local.length ? local : demoRegulations);
-      const { data } = await supabase.from("regulation_updates").select("*").order("date_found", { ascending: false });
-      if (data?.length) setUpdates(data.map((row: any) => ({ id: row.id, organization: row.organization, country: row.country, category: row.category, title: row.title, summary: row.summary, officialUrl: row.official_url, dateFound: formatDate(row.date_found), status: "unread", notes: "" })));
-    };
-    void load();
-  }, []);
-  return updates;
 }
 
 function ProductImpact() {

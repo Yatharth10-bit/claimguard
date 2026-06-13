@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useAuthSession } from "@/contexts/AuthContext";
 import type { UsageSnapshot } from "@/lib/usage";
 
 export function useUsage() {
+  const { user, loading: authLoading } = useAuthSession();
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -24,8 +26,15 @@ export function useUsage() {
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      setUsage(null);
+      setLoading(false);
+      setError("");
+      return;
+    }
     void refresh();
-  }, [refresh]);
+  }, [authLoading, user?.id, refresh]);
 
-  return { usage, loading, error, refresh };
+  return { usage, loading: authLoading || loading, error, refresh };
 }
