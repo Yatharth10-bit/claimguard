@@ -22,7 +22,7 @@ import { CheckFirstClaimCTA } from "@/components/landing/CheckFirstClaimCTA";
 import { FeedbackForm } from "@/components/support/FeedbackForm";
 import { LegalPage } from "@/components/legal/LegalPage";
 import { SignupLegalConsent } from "@/components/legal/SignupLegalConsent";
-import { COOKIE_POLICY, LEGAL_POLICY_VERSION, PRIVACY_POLICY, PRODUCT_DISCLAIMER, TERMS_OF_SERVICE } from "@/lib/legalContent";
+import { COOKIE_POLICY, PRIVACY_POLICY, PRODUCT_DISCLAIMER, TERMS_OF_SERVICE } from "@/lib/legalContent";
 import {
   BILLING_TIER_TO_DODO,
   formatEnterpriseFrom,
@@ -2858,26 +2858,22 @@ function Auth({ signup = false }: { signup?: boolean }) {
       return;
     }
     if (signup) {
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: name.trim(),
-            terms_accepted_at: new Date().toISOString(),
-            terms_version: LEGAL_POLICY_VERSION,
-          },
-        },
+      const response = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, fullName: name.trim() }),
       });
-      if (signUpError) {
-        setError(signUpError.message);
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(typeof body.error === "string" ? body.error : "Unable to create account.");
       } else {
-        if (data.session) {
-          await loadBrandProfile(data.user?.id);
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) {
+          setError(signInError.message);
+        } else {
+          await loadBrandProfile(signInData.user?.id);
           router.push(await resolvePostAuthPath());
           router.refresh();
-        } else {
-          setMessage("Account created. Check your inbox to confirm your email, then log in.");
         }
       }
     } else {
