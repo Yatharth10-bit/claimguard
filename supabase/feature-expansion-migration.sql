@@ -214,27 +214,34 @@ alter table public.competitor_snapshots enable row level security;
 alter table public.notifications enable row level security;
 
 -- amazon_listings policies
+drop policy if exists "Users manage own amazon listings" on public.amazon_listings;
 create policy "Users manage own amazon listings" on public.amazon_listings for all to authenticated
 using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- amazon_scan_results via listing ownership
+drop policy if exists "Users read own amazon scan results" on public.amazon_scan_results;
 create policy "Users read own amazon scan results" on public.amazon_scan_results for select to authenticated
 using (exists (select 1 from public.amazon_listings al where al.id = amazon_listing_id and al.user_id = auth.uid()));
+drop policy if exists "Users insert own amazon scan results" on public.amazon_scan_results;
 create policy "Users insert own amazon scan results" on public.amazon_scan_results for insert to authenticated
 with check (exists (select 1 from public.amazon_listings al where al.id = amazon_listing_id and al.user_id = auth.uid()));
 
 -- social_connections
+drop policy if exists "Users manage own social connections" on public.social_connections;
 create policy "Users manage own social connections" on public.social_connections for all to authenticated
 using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- social_posts via connection
+drop policy if exists "Users read own social posts" on public.social_posts;
 create policy "Users read own social posts" on public.social_posts for select to authenticated
 using (exists (select 1 from public.social_connections sc where sc.id = social_connection_id and sc.user_id = auth.uid()));
+drop policy if exists "Users manage own social posts" on public.social_posts;
 create policy "Users manage own social posts" on public.social_posts for all to authenticated
 using (exists (select 1 from public.social_connections sc where sc.id = social_connection_id and sc.user_id = auth.uid()))
 with check (exists (select 1 from public.social_connections sc where sc.id = social_connection_id and sc.user_id = auth.uid()));
 
 -- social_post_flags via post
+drop policy if exists "Users manage own social post flags" on public.social_post_flags;
 create policy "Users manage own social post flags" on public.social_post_flags for all to authenticated
 using (exists (
   select 1 from public.social_posts sp
@@ -248,32 +255,40 @@ with check (exists (
 ));
 
 -- influencer_briefs
+drop policy if exists "Users manage own influencer briefs" on public.influencer_briefs;
 create policy "Users manage own influencer briefs" on public.influencer_briefs for all to authenticated
 using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- influencer_script_reviews
+drop policy if exists "Users manage own script reviews" on public.influencer_script_reviews;
 create policy "Users manage own script reviews" on public.influencer_script_reviews for all to authenticated
 using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- label_scans
+drop policy if exists "Users manage own label scans" on public.label_scans;
 create policy "Users manage own label scans" on public.label_scans for all to authenticated
 using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- substantiation_entries
+drop policy if exists "Users manage own substantiation" on public.substantiation_entries;
 create policy "Users manage own substantiation" on public.substantiation_entries for all to authenticated
 using (auth.uid() = user_id and deleted_at is null) with check (auth.uid() = user_id);
 
 -- competitor_trackers
+drop policy if exists "Users manage own competitor trackers" on public.competitor_trackers;
 create policy "Users manage own competitor trackers" on public.competitor_trackers for all to authenticated
 using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- competitor_snapshots via tracker
+drop policy if exists "Users read own competitor snapshots" on public.competitor_snapshots;
 create policy "Users read own competitor snapshots" on public.competitor_snapshots for select to authenticated
 using (exists (select 1 from public.competitor_trackers ct where ct.id = competitor_tracker_id and ct.user_id = auth.uid()));
+drop policy if exists "Users insert own competitor snapshots" on public.competitor_snapshots;
 create policy "Users insert own competitor snapshots" on public.competitor_snapshots for insert to authenticated
 with check (exists (select 1 from public.competitor_trackers ct where ct.id = competitor_tracker_id and ct.user_id = auth.uid()));
 
 -- notifications
+drop policy if exists "Users manage own notifications" on public.notifications;
 create policy "Users manage own notifications" on public.notifications for all to authenticated
 using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
