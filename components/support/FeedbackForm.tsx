@@ -61,7 +61,7 @@ export function FeedbackForm() {
         {loading ? <LoaderCircle size={16} className="animate-spin" /> : <MessageSquare size={16} />}
         Send feedback
       </button>
-      <p className="mt-3 text-xs text-muted">Support: hello@claimguard.io</p>
+      <p className="mt-3 text-xs text-muted">Support: claimguard.io@gmail.com</p>
     </section>
   );
 }

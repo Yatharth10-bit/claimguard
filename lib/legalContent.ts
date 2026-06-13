@@ -12,7 +12,8 @@ export type LegalDocument = {
   contactEmail?: string;
 };
 
-const CONTACT_EMAIL = "hello@claimguard.io";
+export const LEGAL_CONTACT_EMAIL = "claimguard.io@gmail.com";
+const CONTACT_EMAIL = LEGAL_CONTACT_EMAIL;
 export const LEGAL_POLICY_VERSION = "June 13, 2026";
 const LEGAL_LAST_UPDATED = LEGAL_POLICY_VERSION;
 
