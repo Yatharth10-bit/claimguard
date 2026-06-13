@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { analyzeClaim } from "@/lib/analyzeClaim";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { assertCanScan, getUsageSnapshot, incrementClaimScans } from "@/lib/usage";
+import { assertCanScan, getUsageSnapshot, releaseClaimScans, reserveClaimScans } from "@/lib/usage";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
 const contextTypes = ["Label", "Website", "Amazon listing", "Ad copy", "Social media", "Influencer script"] as const;
@@ -59,11 +59,21 @@ export async function POST(request: Request) {
     const burst = await checkRateLimit(`${user.id}:burst`, Number(process.env.ANALYSIS_RATE_LIMIT || 40), 60_000);
     if (!burst.allowed) return NextResponse.json({ error: "Too many analyses. Please try again shortly." }, { status: 429 });
 
+    let reservedScan = false;
     if (!input.saveOnly) {
       const gate = await assertCanScan(user.id, 1);
       if (!gate.allowed) {
         return NextResponse.json({ error: gate.message, usage: gate.snapshot, upgradeRequired: true }, { status: 402 });
       }
+      const reserve = await reserveClaimScans(user.id, 1);
+      if (!reserve.allowed) {
+        return NextResponse.json({
+          error: `Monthly scan limit reached (${reserve.snapshot.limits.monthlyScans}/month on ${reserve.snapshot.limits.label}). Upgrade to continue.`,
+          usage: reserve.snapshot,
+          upgradeRequired: true,
+        }, { status: 402 });
+      }
+      reservedScan = true;
     }
 
     if (input.productId) {
@@ -73,7 +83,10 @@ export async function POST(request: Request) {
         .eq("id", input.productId)
         .eq("user_id", user.id)
         .maybeSingle();
-      if (!product) return NextResponse.json({ error: "Product not found." }, { status: 404 });
+      if (!product) {
+        if (reservedScan) await releaseClaimScans(user.id, 1);
+        return NextResponse.json({ error: "Product not found." }, { status: 404 });
+      }
       input = {
         ...input,
         productCategory: product.category,
@@ -99,10 +112,9 @@ export async function POST(request: Request) {
       status: row.status,
     }).select().single();
 
-    if (!input.saveOnly) await incrementClaimScans(user.id, 1);
-    const usage = await getUsageSnapshot(user.id);
-
     if (error) {
+      if (reservedScan) await releaseClaimScans(user.id, 1);
+      const usage = await getUsageSnapshot(user.id);
       return NextResponse.json({
         analysis: row,
         provider: "rules",
@@ -111,6 +123,8 @@ export async function POST(request: Request) {
         usage,
       });
     }
+
+    const usage = await getUsageSnapshot(user.id);
 
     return NextResponse.json({ analysis: data, provider: "rules", saved: true, usage });
   } catch {

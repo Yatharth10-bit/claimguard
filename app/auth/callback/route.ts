@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { postAuthPath, profileFromRow } from "@/lib/authRouting";
+import { postAuthPath } from "@/lib/authRouting";
 import { LEGAL_POLICY_VERSION } from "@/lib/legalContent";
+import { loadRemoteBrandProfile } from "@/lib/brandProfileRemote";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
@@ -37,33 +38,24 @@ export async function GET(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   const admin = getSupabaseAdmin();
 
-  if (user && admin) {
+  if (user && admin && signup) {
     const metadata = user.user_metadata ?? {};
     const fullName = String(metadata.full_name || metadata.name || user.email?.split("@")[0] || "");
 
-    if (signup || !metadata.terms_accepted_at) {
-      await admin.auth.admin.updateUserById(user.id, {
-        user_metadata: {
-          ...metadata,
-          full_name: fullName,
-          terms_accepted_at: metadata.terms_accepted_at || new Date().toISOString(),
-          terms_version: metadata.terms_version || LEGAL_POLICY_VERSION,
-        },
-      });
-    }
+    await admin.auth.admin.updateUserById(user.id, {
+      user_metadata: {
+        ...metadata,
+        full_name: fullName,
+        terms_accepted_at: new Date().toISOString(),
+        terms_version: LEGAL_POLICY_VERSION,
+      },
+    });
   }
 
   let destination = "/dashboard";
   if (user && admin) {
-    const { data: profileRow } = await admin
-      .from("profiles")
-      .select("brand_compliance_profile")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    destination = postAuthPath(profileFromRow(profileRow), { next, signup });
-  } else if (next?.startsWith("/")) {
-    destination = next;
+    const profile = await loadRemoteBrandProfile(admin, user.id);
+    destination = postAuthPath(profile, { next, signup });
   }
 
   return NextResponse.redirect(safeRedirectPath(request, destination));

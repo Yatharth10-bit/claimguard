@@ -195,6 +195,7 @@ export async function saveBrandProfile(
     createdAt: profile.createdAt || now,
     updatedAt: now,
   };
+  const previousLocal = readLocalProfile(localKey);
   writeLocalProfile(localKey, payload);
 
   if (!isSupabaseConfigured()) {
@@ -205,13 +206,20 @@ export async function saveBrandProfile(
   if (supabase) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) {
+      if (previousLocal) writeLocalProfile(localKey, previousLocal);
+      else if (typeof window !== "undefined") localStorage.removeItem(localKey);
       return options?.skipRemoteMerge
         ? { ok: true }
         : { ok: false, error: "Your session expired. Please log in again and retry onboarding." };
     }
   }
 
-  return saveBrandProfileRemote(payload, options);
+  const remote = await saveBrandProfileRemote(payload, options);
+  if (!remote.ok) {
+    if (previousLocal) writeLocalProfile(localKey, previousLocal);
+    else if (typeof window !== "undefined") localStorage.removeItem(localKey);
+  }
+  return remote;
 }
 
 export function getCheckFirstClaimHref(options: {

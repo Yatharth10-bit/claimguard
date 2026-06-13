@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { analyzeClaim } from "@/lib/analyzeClaim";
-import { assertCanScan, incrementClaimScans } from "@/lib/usage";
+import { assertCanScan, getUsageSnapshot, reserveClaimScans } from "@/lib/usage";
 import { splitClaimLikeSentences } from "@/lib/workflow";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -38,6 +38,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: gate.message, usage: gate.snapshot, upgradeRequired: true }, { status: 402 });
     }
 
+    const reserve = await reserveClaimScans(user.id, sentences.length);
+    if (!reserve.allowed) {
+      return NextResponse.json({
+        error: `This action needs ${sentences.length} scan${sentences.length === 1 ? "" : "s"}, but only ${reserve.snapshot.scansRemaining ?? 0} remain on ${reserve.snapshot.limits.label}.`,
+        usage: reserve.snapshot,
+        upgradeRequired: true,
+      }, { status: 402 });
+    }
+
     const analyses = sentences.map((claimText) => {
       const result = analyzeClaim({
         claimText,
@@ -53,12 +62,10 @@ export async function POST(request: Request) {
       };
     });
 
-    await incrementClaimScans(user.id, sentences.length);
-
     return NextResponse.json({
       analyses,
       scanned: sentences.length,
-      usage: await import("@/lib/usage").then((mod) => mod.getUsageSnapshot(user.id)),
+      usage: await getUsageSnapshot(user.id),
       provider: "rules",
     });
   } catch {

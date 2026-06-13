@@ -21,7 +21,7 @@ function getSupabaseAdmin() {
 
 async function onboardingCompleteForUser(userId: string) {
   const admin = getSupabaseAdmin();
-  if (!admin) return false;
+  if (!admin) return true;
   const profile = await loadRemoteBrandProfile(admin, userId);
   return isOnboardingComplete(profile);
 }

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { LEGAL_POLICY_VERSION } from "@/lib/legalContent";
+import { getClientIp } from "@/lib/request";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const inputSchema = z.object({
@@ -13,6 +15,11 @@ export async function POST(request: Request) {
   const parsed = inputSchema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid signup details.", details: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const limit = await checkRateLimit(`signup:${getClientIp(request)}`, 10, 60_000);
+  if (!limit.allowed) {
+    return NextResponse.json({ error: "Too many signup attempts. Please try again shortly." }, { status: 429 });
   }
 
   const admin = getSupabaseAdmin();

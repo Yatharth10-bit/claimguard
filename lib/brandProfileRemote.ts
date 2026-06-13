@@ -3,7 +3,21 @@ import type { BrandComplianceProfile } from "@/lib/brandProfile";
 import { EMPTY_BRAND_PROFILE } from "@/lib/brandProfile";
 
 const BUCKET = "brand-profiles";
-const PROFILE_MARKER = "__cg_brand_profile_v1__:";
+export const PROFILE_MARKER = "__cg_brand_profile_v1__:";
+
+export function formatProfileCompanyName(companyName: string | null | undefined): string {
+  if (!companyName?.startsWith(PROFILE_MARKER)) return companyName || "";
+  try {
+    const profile = JSON.parse(companyName.slice(PROFILE_MARKER.length)) as { brandName?: string };
+    return profile.brandName || "";
+  } catch {
+    return "";
+  }
+}
+
+export function isEncodedBrandProfileCompanyName(companyName: string | null | undefined): boolean {
+  return Boolean(companyName?.startsWith(PROFILE_MARKER));
+}
 
 function profilePath(userId: string) {
   return `${userId}/profile.json`;

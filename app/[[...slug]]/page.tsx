@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { notFound, usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight, Check, CheckCircle2, ChevronRight, ClipboardCheck, Copy, ExternalLink,
   FileText, FlaskConical, Gauge, LayoutDashboard, Lightbulb, ListChecks, LoaderCircle, LogOut,
@@ -46,6 +46,7 @@ import { useUsage } from "@/hooks/useUsage";
 import { postAuthPath } from "@/lib/authRouting";
 import { signInWithGoogle } from "@/lib/googleAuth";
 import { BRAND_ONBOARDING_ENABLED, isOnboardingComplete, loadBrandProfile } from "@/lib/brandProfile";
+import { formatProfileCompanyName, isEncodedBrandProfileCompanyName } from "@/lib/brandProfileRemote";
 import { getSupabaseBrowser, isSupabaseConfigured } from "@/lib/supabase/client";
 import { analyzeClaim, CLAIM_DISCLAIMER } from "@/lib/analyzeClaim";
 import { calculateProductRisk, matchRegulationImpacts, needsSupplementDisclaimer, splitClaimLikeSentences } from "@/lib/workflow";
@@ -371,7 +372,19 @@ async function recordAudit(action: string, detail: string) {
   writeAuditFallback([event, ...readAuditFallback()].slice(0, 100));
 }
 
-async function createWorkflowTask(input: Omit<WorkflowTask, "id" | "status"> & { status?: TaskStatus }) {
+async function createWorkflowTask(input: Omit<WorkflowTask, "id" | "status"> & { status?: TaskStatus }): Promise<{ ok: true; task: WorkflowTask } | { ok: false; error: string }> {
+  try {
+    const usageRes = await fetch("/api/usage");
+    if (usageRes.ok) {
+      const body = await usageRes.json() as { usage?: { limits: { taskBoard: boolean } } };
+      if (body.usage && !body.usage.limits.taskBoard) {
+        return { ok: false, error: "Upgrade to Guard to create workflow tasks." };
+      }
+    }
+  } catch {
+    // Allow local fallback when usage API is unavailable in development.
+  }
+
   const task: WorkflowTask = { ...input, id: crypto.randomUUID(), status: input.status || "Needs Review" };
   const supabase = getSupabaseBrowser();
   if (supabase) {
@@ -388,13 +401,13 @@ async function createWorkflowTask(input: Omit<WorkflowTask, "id" | "status"> & {
       }).select().single();
       if (!error && data) {
         await recordAudit("Task created", `${task.product}: ${task.claimIssue}`);
-        return { ...task, id: data.id };
+        return { ok: true, task: { ...task, id: data.id } };
       }
     }
   }
   writeTaskFallback([task, ...readTaskFallback()]);
   await recordAudit("Task created", `${task.product}: ${task.claimIssue}`);
-  return task;
+  return { ok: true, task };
 }
 
 async function copyText(text: string) {
@@ -1310,7 +1323,7 @@ function ClaimChecker() {
 
   const createTask = async () => {
     if (!result) return;
-    await createWorkflowTask({
+    const created = await createWorkflowTask({
       product: result.product,
       claimIssue: result.originalClaim,
       riskLevel: result.riskLevel,
@@ -1318,7 +1331,7 @@ function ClaimChecker() {
       dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
       status: result.riskLevel === "high" ? "Expert Review Needed" : "Needs Review",
     });
-    setError("Task created and added to the workflow board.");
+    setError(created.ok ? "Task created and added to the workflow board." : created.error);
   };
 
   return (
@@ -1700,7 +1713,7 @@ function ClaimLibrary() {
   };
 
   const createTask = async (claim: ClaimAnalysis) => {
-    await createWorkflowTask({
+    const created = await createWorkflowTask({
       product: claim.product,
       claimIssue: claim.originalClaim,
       riskLevel: claim.riskLevel,
@@ -1708,7 +1721,7 @@ function ClaimLibrary() {
       dueDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
       status: claim.riskLevel === "high" ? "Expert Review Needed" : "Needs Review",
     });
-    setMessage("Task created.");
+    setMessage(created.ok ? "Task created." : created.error);
   };
 
   return (
@@ -1822,8 +1835,8 @@ function CopyScanner() {
   };
 
   const task = async (result: ClaimAnalysis) => {
-    await createWorkflowTask({ product: result.product, claimIssue: result.originalClaim, riskLevel: result.riskLevel, source: context, dueDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) });
-    setMessage("Task created.");
+    const created = await createWorkflowTask({ product: result.product, claimIssue: result.originalClaim, riskLevel: result.riskLevel, source: context, dueDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) });
+    setMessage(created.ok ? "Task created." : created.error);
   };
 
   return (
@@ -1875,8 +1888,8 @@ function ProductImpact() {
   const matches = useMemo(() => matchRegulationImpacts(products, claims, regulations), [products, claims, regulations]);
 
   const createTask = async (match: typeof matches[number]) => {
-    await createWorkflowTask({ product: match.product, claimIssue: match.reason, riskLevel: match.riskLevel, source: match.regulation.organization, dueDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) });
-    setMessage("Impact task created.");
+    const created = await createWorkflowTask({ product: match.product, claimIssue: match.reason, riskLevel: match.riskLevel, source: match.regulation.organization, dueDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) });
+    setMessage(created.ok ? "Impact task created." : created.error);
   };
 
   return (
@@ -1897,7 +1910,7 @@ function ProductImpact() {
 }
 
 function TasksBoard() {
-  const { usage } = useUsage();
+  const { usage, loading: usageLoading } = useUsage();
   const { tasks, setTasks, loading } = useTasks();
   const columns: TaskStatus[] = ["Needs Review", "Fixing", "Expert Review Needed", "Fixed", "Approved"];
   const move = async (task: WorkflowTask, status: TaskStatus) => {
@@ -1920,7 +1933,15 @@ function TasksBoard() {
     } else writeTaskFallback(next);
     await recordAudit("Task removed", `${task.product}: ${task.claimIssue}`);
   };
-  if (usage && !usage.limits.taskBoard) {
+  if (usageLoading) {
+    return (
+      <AppShell title="Task Board" subtitle="Turn compliance risks into trackable fixes.">
+        <div className="surface p-8 text-sm text-muted">Loading plan access...</div>
+      </AppShell>
+    );
+  }
+
+  if (!usage || !usage.limits.taskBoard) {
     return (
       <AppShell title="Task Board" subtitle="Workflow tasks are available on Guard and above.">
         <div className="surface p-6">
@@ -1967,6 +1988,7 @@ function AuditTimeline() {
 type SubscriptionSummary = {
   plan: string;
   product_id: string;
+  customer_id?: string | null;
   status: string;
   next_billing_date: string | null;
   cancel_at_next_billing_date: boolean;
@@ -2050,7 +2072,7 @@ function BillingPanel({ email }: { email: string }) {
           <div className="mt-5 flex flex-wrap gap-2">
             <button onClick={() => void startCheckout("guard")} disabled={Boolean(checkoutLoading) || !configured} className="primary">{checkoutLoading === "growth_monthly" || checkoutLoading === "growth_annual" ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}Choose Guard — $39/mo</button>
             <button onClick={() => void startCheckout("shield")} disabled={Boolean(checkoutLoading) || !configured} className="secondary">Choose Shield — $99/mo</button>
-            {subscription && <button onClick={() => void openPortal()} disabled={Boolean(checkoutLoading)} className="secondary">Manage billing <ExternalLink size={14} /></button>}
+            {subscription?.customer_id && <button onClick={() => void openPortal()} disabled={Boolean(checkoutLoading)} className="secondary">Manage billing <ExternalLink size={14} /></button>}
           </div>
           <p className="mt-4 text-xs text-muted">Checkout uses the monthly or annual preference selected on the pricing page. Signed in as {email || "your workspace account"}.</p>
         </>
@@ -2061,6 +2083,7 @@ function BillingPanel({ email }: { email: string }) {
 
 function SettingsPage() {
   const [profile, setProfile] = useState({ email: "", fullName: "", companyName: "" });
+  const [companyNameLocked, setCompanyNameLocked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -2074,7 +2097,14 @@ function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data } = await supabase.from("profiles").select("email, full_name, company_name").eq("id", user.id).maybeSingle();
-      setProfile({ email: data?.email || user.email || "", fullName: data?.full_name || "", companyName: data?.company_name || "" });
+      const rawCompanyName = data?.company_name || "";
+      const encodedProfile = isEncodedBrandProfileCompanyName(rawCompanyName);
+      setCompanyNameLocked(encodedProfile);
+      setProfile({
+        email: data?.email || user.email || "",
+        fullName: data?.full_name || "",
+        companyName: encodedProfile ? formatProfileCompanyName(rawCompanyName) : rawCompanyName,
+      });
     };
     void load();
   }, []);
@@ -2091,7 +2121,10 @@ function SettingsPage() {
     }
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { error } = await supabase.from("profiles").update({ full_name: profile.fullName, company_name: profile.companyName }).eq("id", user.id);
+    const updates = companyNameLocked
+      ? { full_name: profile.fullName }
+      : { full_name: profile.fullName, company_name: profile.companyName };
+    const { error } = await supabase.from("profiles").update(updates).eq("id", user.id);
     setMessage(error ? error.message : "Profile saved.");
     setSaving(false);
   };
@@ -2105,7 +2138,15 @@ function SettingsPage() {
           <div className="mt-5 space-y-4">
             <Field label="Email"><input className="input" value={profile.email} disabled /></Field>
             <Field label="Full name"><input className="input" value={profile.fullName} onChange={(event) => setProfile({ ...profile, fullName: event.target.value })} /></Field>
-            <Field label="Company name"><input className="input" value={profile.companyName} onChange={(event) => setProfile({ ...profile, companyName: event.target.value })} /></Field>
+            <Field label="Company name">
+              <input
+                className="input"
+                value={profile.companyName}
+                disabled={companyNameLocked}
+                onChange={(event) => setProfile({ ...profile, companyName: event.target.value })}
+              />
+              {companyNameLocked && <p className="mt-2 text-xs text-muted">Managed by your Brand Compliance Profile. Edit it in the section above.</p>}
+            </Field>
             {message && <p className="text-sm text-muted">{message}</p>}
             <button onClick={saveProfile} disabled={saving} className="primary">{saving ? "Saving..." : "Save profile"}</button>
           </div>
@@ -2129,7 +2170,7 @@ function SettingsPage() {
 }
 
 function Reports() {
-  const { usage } = useUsage();
+  const { usage, loading: usageLoading } = useUsage();
   const { products } = useProducts();
   const { claims } = useClaims();
   const [productName, setProductName] = useState("");
@@ -2138,7 +2179,14 @@ function Reports() {
     void recordAudit("Report exported", productName || "All products");
     window.print();
   };
-  if (usage && !usage.limits.pdfExport) {
+  if (usageLoading) {
+    return (
+      <AppShell title="Reports" subtitle="Preview a clean, PDF-style claim-risk report for your team.">
+        <div className="surface p-8 text-sm text-muted">Loading plan access...</div>
+      </AppShell>
+    );
+  }
+  if (!usage || !usage.limits.pdfExport) {
     return (
       <AppShell title="Reports" subtitle="PDF-style claim-risk reports are available on Guard and above.">
         <div className="surface p-6">
@@ -3009,5 +3057,5 @@ export default function Page() {
   if (path === "/privacy") return <LegalPage document={PRIVACY_POLICY} />;
   if (path === "/cookies") return <LegalPage document={COOKIE_POLICY} />;
   if (path === "/disclaimer") return <LegalPage document={PRODUCT_DISCLAIMER} />;
-  return <Landing />;
+  notFound();
 }

@@ -81,6 +81,56 @@ export async function incrementClaimScans(userId: string, amount = 1) {
   }, { onConflict: "user_id,period_key" });
 }
 
+export async function reserveClaimScans(userId: string, amount = 1): Promise<{ allowed: boolean; snapshot: UsageSnapshot }> {
+  const periodKey = currentUsagePeriod();
+  const subscription = await getUserSubscription(userId);
+  const plan = resolvePlanTier(subscription);
+  const limits = PLAN_LIMITS[plan];
+  const admin = getSupabaseAdmin();
+
+  if (!admin || amount <= 0) {
+    const snapshot = await getUsageSnapshot(userId);
+    const allowed = limits.monthlyScans === null || snapshot.claimScansUsed + amount <= (limits.monthlyScans ?? 0);
+    return { allowed, snapshot };
+  }
+
+  const { data, error } = await admin.rpc("increment_claim_scans_if_allowed", {
+    p_user_id: userId,
+    p_period_key: periodKey,
+    p_amount: amount,
+    p_max_scans: limits.monthlyScans,
+  });
+
+  if (error) {
+    const snapshot = await getUsageSnapshot(userId);
+    if (!snapshot.canScan || (limits.monthlyScans !== null && snapshot.claimScansUsed + amount > limits.monthlyScans)) {
+      return { allowed: false, snapshot };
+    }
+    await incrementClaimScans(userId, amount);
+    return { allowed: true, snapshot: await getUsageSnapshot(userId) };
+  }
+
+  return { allowed: Boolean(data), snapshot: await getUsageSnapshot(userId) };
+}
+
+export async function releaseClaimScans(userId: string, amount = 1) {
+  const admin = getSupabaseAdmin();
+  if (!admin || amount <= 0) return;
+  const periodKey = currentUsagePeriod();
+  const { data: existing } = await admin
+    .from("usage_counters")
+    .select("claim_scans")
+    .eq("user_id", userId)
+    .eq("period_key", periodKey)
+    .maybeSingle();
+  if (!existing) return;
+  const nextCount = Math.max(0, existing.claim_scans - amount);
+  await admin.from("usage_counters").update({
+    claim_scans: nextCount,
+    updated_at: new Date().toISOString(),
+  }).eq("user_id", userId).eq("period_key", periodKey);
+}
+
 export async function assertCanScan(userId: string, amount = 1) {
   const snapshot = await getUsageSnapshot(userId);
   if (!snapshot.canScan) {

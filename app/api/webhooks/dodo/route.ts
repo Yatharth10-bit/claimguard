@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       if (!userId || !data.subscription_id) return;
       const admin = getSupabaseAdmin();
       if (!admin) return;
-      await admin.from("billing_subscriptions").upsert({
+      const { error } = await admin.from("billing_subscriptions").upsert({
         user_id: userId,
         customer_id: data.customer?.customer_id,
         subscription_id: data.subscription_id,
@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
         cancel_at_next_billing_date: Boolean(data.cancel_at_next_billing_date),
         updated_at: new Date().toISOString(),
       }, { onConflict: "subscription_id" });
+      if (error) throw new Error(error.message);
     },
   })(request);
 }

@@ -1,11 +1,21 @@
 import type { BrandComplianceProfile } from "@/lib/brandProfile";
 import { BRAND_ONBOARDING_ENABLED, isOnboardingComplete } from "@/lib/brandProfile";
 
+/** Allow only same-origin relative paths (blocks open redirects). */
+export function sanitizeRedirectPath(next?: string | null): string | null {
+  if (!next) return null;
+  const trimmed = next.trim();
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return null;
+  if (trimmed.includes("://") || trimmed.includes("\\")) return null;
+  return trimmed;
+}
+
 export function postAuthPath(
   profile: BrandComplianceProfile | null,
   options?: { next?: string | null; signup?: boolean },
 ): string {
-  if (options?.next) return options.next;
+  const safeNext = sanitizeRedirectPath(options?.next);
+  if (safeNext) return safeNext;
   if (!BRAND_ONBOARDING_ENABLED) return "/dashboard";
   if (options?.signup) return "/onboarding";
   return isOnboardingComplete(profile) ? "/dashboard" : "/onboarding";

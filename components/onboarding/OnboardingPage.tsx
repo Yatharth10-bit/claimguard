@@ -113,8 +113,8 @@ export function OnboardingPage() {
             </span>
             <span className="hidden sm:inline">ClaimGuard</span>
           </Link>
-          <Link href="/dashboard" className="text-sm font-semibold text-muted hover:text-ink">
-            Skip to dashboard
+          <Link href="/" className="text-sm font-semibold text-muted hover:text-ink">
+            Back to home
           </Link>
         </div>
 
