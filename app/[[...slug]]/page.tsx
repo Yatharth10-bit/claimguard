@@ -14,9 +14,12 @@ import { BetaBadge } from "@/components/billing/BetaBadge";
 import { UsageMeter } from "@/components/billing/UsageMeter";
 import { WeeklyDigestPanel } from "@/components/billing/WeeklyDigestPanel";
 import { ClaimExamplePicker } from "@/components/claim-checker/ClaimExamplePicker";
+import { ClaimFeedbackPanel } from "@/components/claim-checker/ClaimFeedbackPanel";
+import { ClaimIntelligencePanel } from "@/components/claim-checker/ClaimIntelligencePanel";
 import { ComplianceCopilotPanel } from "@/components/claim-checker/ComplianceCopilotPanel";
 import { RegressionCoverageBadge } from "@/components/claim-checker/RegressionCoverageBadge";
 import { RiskPatternTips } from "@/components/claim-checker/RiskPatternTips";
+import { LearningCenterPage } from "@/components/admin/LearningCenterPage";
 import { RegulationImpactExplainer } from "@/components/regulations/RegulationImpactExplainer";
 import { CheckFirstClaimCTA } from "@/components/landing/CheckFirstClaimCTA";
 import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
@@ -58,7 +61,9 @@ import { signInWithGoogle } from "@/lib/googleAuth";
 import { BRAND_ONBOARDING_ENABLED, isOnboardingComplete, loadBrandProfile, sectorLabel } from "@/lib/brandProfile";
 import { formatProfileCompanyName, isEncodedBrandProfileCompanyName } from "@/lib/brandProfileRemote";
 import { getSupabaseBrowser, isSupabaseConfigured } from "@/lib/supabase/client";
-import { analyzeClaim, CLAIM_DISCLAIMER } from "@/lib/analyzeClaim";
+import { CLAIM_DISCLAIMER } from "@/lib/analyzeClaim";
+import { runClaimIntelligence, runClaimIntelligenceQuick } from "@/lib/claimIntelligence/engine";
+import type { ClaimIntelligenceResult } from "@/lib/claimIntelligence/types";
 import { calculateProductRisk, matchRegulationImpacts, needsSupplementDisclaimer, splitClaimLikeSentences } from "@/lib/workflow";
 import { MARKET_OPTIONS, PRODUCT_CATEGORIES } from "@/lib/complianceData";
 import { REGULATORY_SOURCES } from "@/lib/regulatorySources";
@@ -1093,6 +1098,9 @@ function ClaimChecker() {
   const [copilotPayload, setCopilotPayload] = useState<CopilotPayload | null>(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [intelligence, setIntelligence] = useState<ClaimIntelligenceResult | null>(null);
+  const [claimCheckResultId, setClaimCheckResultId] = useState<string | undefined>();
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -1124,7 +1132,7 @@ function ClaimChecker() {
   };
 
   const analysisFromRules = (input: ReturnType<typeof buildAnalysisInput>, savedRemotely = false): ClaimAnalysis => {
-    const rulesResult = analyzeClaim(input);
+    const rulesResult = runClaimIntelligence({ ...input, sector: profile?.sector });
     const selected = products.find((item) => item.id === product);
     return {
       id: crypto.randomUUID(),
@@ -1157,10 +1165,33 @@ function ClaimChecker() {
 
   const analyze = async () => {
     setLoading(true);
+    setEnriching(true);
     setError("");
     setResult(null);
+    setIntelligence(null);
+    setClaimCheckResultId(undefined);
     setCopilotPayload(null);
     const input = buildAnalysisInput();
+
+    const quick = runClaimIntelligenceQuick({ ...input, sector: profile?.sector });
+    setResult({
+      id: crypto.randomUUID(),
+      originalClaim: input.claimText,
+      context: input.contextType,
+      product: products.find((item) => item.id === product)?.name || profile?.brandName || "Unassigned",
+      date: formatDate(new Date().toISOString()),
+      riskLevel: quick.riskLevel,
+      riskScore: quick.riskScore,
+      riskyPhrases: quick.riskyPhrases,
+      explanation: "Quick risk scan complete — loading deeper compliance analysis…",
+      saferRewrite: "",
+      checklist: [],
+      sources: [],
+      disclaimer: CLAIM_DISCLAIMER,
+      status: quick.riskLevel === "high" ? "Expert Review Needed" : "Needs Review",
+      storage: "local",
+    });
+
     try {
       let analysis: ClaimAnalysis | null = null;
       let usedClientFallback = false;
@@ -1185,6 +1216,13 @@ function ClaimChecker() {
             product: products.find((item) => item.id === product)?.name || profile?.brandName || "Unassigned",
             storage: body.saved === false ? "local" as const : "workspace" as const,
           };
+          const fullIntel = runClaimIntelligence({ ...input, sector: profile?.sector });
+          if (body.analysis?.intelligence) {
+            setIntelligence({ ...fullIntel, ...body.analysis.intelligence });
+            setClaimCheckResultId(body.analysis.intelligence.claimCheckResultId);
+          } else {
+            setIntelligence(fullIntel);
+          }
           if (body.saved === false) {
             persistLocalAnalysis(analysis, body.warning || "Analysis completed and was saved locally.");
           } else {
@@ -1202,7 +1240,8 @@ function ClaimChecker() {
       if (!analysis) {
         analysis = analysisFromRules(input, false);
         usedClientFallback = true;
-        persistLocalAnalysis(analysis, isSupabaseConfigured() ? "Analysis ran locally because the workspace session was unavailable." : "Analysis completed using the local rules engine.");
+        setIntelligence(runClaimIntelligence({ ...input, sector: profile?.sector }));
+        persistLocalAnalysis(analysis, isSupabaseConfigured() ? "Analysis ran locally because the workspace session was unavailable." : "Analysis completed using the local Claim Intelligence Engine.");
       }
 
       setResult(analysis);
@@ -1225,6 +1264,7 @@ function ClaimChecker() {
       setError(analysisError instanceof Error ? analysisError.message : "Analysis failed.");
     } finally {
       setLoading(false);
+      setEnriching(false);
       setCopied(false);
     }
   };
@@ -1283,7 +1323,7 @@ function ClaimChecker() {
   };
 
   return (
-    <AppShell title="Claim checker" subtitle="Analyze a claim for FDA and FTC risk flags before publishing. Validated across 1000 product scenarios.">
+    <AppShell title="Claim checker" subtitle="Claim Intelligence Engine — layered rule, retrieval, and regulatory analysis. Useful from your first scan.">
       <div className="mb-5 space-y-4">
         <RegressionCoverageBadge />
         <UsageMeter usage={usage} />
@@ -1321,13 +1361,15 @@ function ClaimChecker() {
         <aside className="space-y-5">
           {result ? (
             <div className="surface overflow-hidden p-5">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted">Analysis provider: production rules engine</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">Claim Intelligence Engine · estimated from public + regulatory patterns</p>
               {needsSupplementDisclaimer(products.find((item) => item.id === product)?.category || "", claim) && (
                 <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">
                   <strong>Label disclaimer checker:</strong> This claim may need a supplement disclaimer before publishing.
                 </div>
               )}
               <AnalysisResult result={result} copied={copied} onCopy={copyRewrite} onStatus={updateStatus} onTask={createTask} copilotPayload={copilotPayload || undefined} />
+              <ClaimIntelligencePanel intelligence={intelligence} loading={loading} enriching={enriching} />
+              <ClaimFeedbackPanel claimCheckResultId={claimCheckResultId} claimId={result.id} />
             </div>
           ) : (
           <div className="grid min-h-96 place-items-center rounded-2xl border border-dashed border-black/10 bg-stone p-10 text-center">
@@ -1341,7 +1383,7 @@ function ClaimChecker() {
           {!result && <RiskPatternTips />}
           <div className="rounded-2xl bg-ink p-5 text-white">
             <p className="text-xs font-bold uppercase tracking-wider text-white/50">Resilient analysis</p>
-            <p className="mt-3 text-sm leading-6 text-white/80">ClaimGuard uses an inspectable rules engine with product category, ingredients, market, and publishing context. Plan limits are enforced server-side.</p>
+            <p className="mt-3 text-sm leading-6 text-white/80">Layered intelligence: rules → retrieval → internet-learned patterns → regulatory references. Continuous learning runs in the background — unreviewed data never overwrites live checks.</p>
             <p className="mt-4 border-t border-white/10 pt-4 text-xs leading-5 text-white/60">{fallbackDisclaimer}</p>
           </div>
         </aside>
@@ -1699,6 +1741,14 @@ function ClaimLibrary() {
           </article>
         )) : <div className="surface"><Empty icon={ClipboardCheck} title="No claims match this filter" text="Scan or check copy to add claims to the library." action="/copy-scanner" actionText="Open copy scanner" /></div>}
       </div>
+    </AppShell>
+  );
+}
+
+function AdminLearningCenter() {
+  return (
+    <AppShell title="Learning Center" subtitle="Admin-only — review learned claims, evaluation runs, and source health.">
+      <LearningCenterPage />
     </AppShell>
   );
 }
@@ -2322,7 +2372,7 @@ function Landing() {
   const { isLoggedIn, loading: authLoading } = useAuthSession();
   const [authNotice, setAuthNotice] = useState("");
   const [heroClaim, setHeroClaim] = useState("Boosts immunity and prevents illness.");
-  const [heroResult, setHeroResult] = useState<ReturnType<typeof analyzeClaim> | null>(null);
+  const [heroResult, setHeroResult] = useState<ReturnType<typeof runClaimIntelligence> | null>(null);
   const [demoView, setDemoView] = useState<"products" | "risk" | "updates">("risk");
   const [theme, setTheme] = useState<"light" | "dark" | "contrast">("light");
   const [navCompact, setNavCompact] = useState(false);
@@ -2383,12 +2433,13 @@ function Landing() {
   };
 
   const checkHeroClaim = () => {
-    setHeroResult(analyzeClaim({
+    setHeroResult(runClaimIntelligence({
       claimText: heroClaim,
       productCategory: "Dietary Supplement",
       ingredients: ["Botanical blend"],
       market: "United States FDA + FTC",
       contextType: "Website",
+      sector: "Supplements",
     }));
   };
 
@@ -3039,6 +3090,7 @@ export default function Page() {
   if (path === "/products") return <Products />;
   if (path === "/products/new" || path === "/products/add") return <AddProduct />;
   if (path === "/claim-checker") return <ClaimChecker />;
+  if (path === "/admin/learning") return <AdminLearningCenter />;
   if (path === "/claims" || path === "/saved-claims") return <ClaimLibrary />;
   if (path === "/regulations") return <Regulations />;
   if (path === "/impact") return <ProductImpact />;

@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-06-14 — Claim Intelligence Engine v2
+
+### Mini LLM-style layered claim checker
+- **Rule layer** — fast phrase/pattern detection (existing rules, v2.0.0)
+- **Retrieval layer** — similar claim examples from 50k+ in-memory seed + DB `claim_examples`
+- **Internet-learned patterns** — sector-specific marketing pattern notes (not auto-promoted)
+- **Regulatory reference layer** — FDA/FTC/ASA guidance via `regulatorySources`
+- **AI reasoning layer** — confidence score, main issue, why it matters, next action
+- **Feedback layer** — `POST /api/claim-feedback` (review queue, no instant production changes)
+- **Evaluation layer** — `npm run eval:claims`, cron `/api/cron/claim-evaluation`
+
+### Admin Learning Center (`/admin/learning`)
+- Stats, sources, evaluation metrics, pending review counts
+- Requires `ADMIN_EMAILS` env var
+
+### Continuous learning (background)
+- `POST /api/cron/claim-learning` — regulatory sync + synthetic extraction to review queue
+- Safe promotion: internet data → review → approved → retrieval only
+
+### SQL migration
+- `supabase/claim-intelligence-engine.sql` — copy-paste all tables
+- Optional: `npm run db:seed-claims` to populate `claim_examples`
+
+### UX
+- Progressive claim checker: instant quick risk → deeper intelligence panel
+- Memoized intelligence/feedback components
+
+---
+
 ## 2026-06-14 — Social Intelligence Lite (replaces Social Monitor)
 
 ### Social Intelligence Lite (`/social`)

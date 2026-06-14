@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { analyzeClaim } from "@/lib/analyzeClaim";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { assertCanScan, getUsageSnapshot, releaseClaimScans, reserveClaimScans } from "@/lib/usage";
 import { requireUser } from "@/lib/apiAuth";
 import { fetchOwnedProduct } from "@/lib/ownedProduct";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { runClaimIntelligence } from "@/lib/claimIntelligence/engine";
+import { loadBrandProfileServer } from "@/lib/brandProfileServer";
 
 const contextTypes = ["Label", "Website", "Amazon listing", "Ad copy", "Social media", "Influencer script"] as const;
 const inputSchema = z.object({
@@ -18,7 +18,7 @@ const inputSchema = z.object({
   saveOnly: z.boolean().optional(),
 });
 
-function responseRow(input: z.infer<typeof inputSchema>, analysis: ReturnType<typeof analyzeClaim>) {
+function responseRow(input: z.infer<typeof inputSchema>, analysis: ReturnType<typeof runClaimIntelligence>, claimCheckResultId?: string) {
   return {
     id: crypto.randomUUID(),
     original_text: input.claimText,
@@ -32,6 +32,21 @@ function responseRow(input: z.infer<typeof inputSchema>, analysis: ReturnType<ty
     checklist: analysis.checklist,
     status: analysis.riskLevel === "high" ? "expert_review_needed" : "needs_review",
     created_at: new Date().toISOString(),
+    intelligence: {
+      confidenceScore: analysis.confidenceScore,
+      mainIssue: analysis.mainIssue,
+      whyItMatters: analysis.whyItMatters,
+      suggestedNextAction: analysis.suggestedNextAction,
+      riskCategories: analysis.riskCategories,
+      similarPatterns: analysis.similarPatterns,
+      retrievedExamples: analysis.retrievedExamples,
+      modelVersion: analysis.modelVersion,
+      ruleVersion: analysis.rulesVersion,
+      promptVersion: analysis.promptVersion,
+      datasetVersion: analysis.datasetVersion,
+      layersUsed: analysis.layersUsed,
+      claimCheckResultId,
+    },
   };
 }
 
@@ -43,10 +58,10 @@ export async function POST(request: Request) {
     const auth = await requireUser();
     if ("error" in auth) {
       if (process.env.NODE_ENV !== "production") {
-        const analysis = analyzeClaim(input);
+        const analysis = runClaimIntelligence(input);
         return NextResponse.json({
           analysis: responseRow(input, analysis),
-          provider: "rules",
+          provider: "claim-intelligence",
           saved: false,
           warning: "Development mode only: Supabase is unavailable. Save this analysis locally.",
         });
@@ -96,8 +111,44 @@ export async function POST(request: Request) {
       }
     }
 
-    const analysis = analyzeClaim(input);
-    const row = responseRow(input, analysis);
+    const profile = await loadBrandProfileServer(user.id);
+    const sector = profile?.sector || "";
+
+    let dbExamples: { claim_text: string; sector: string; risk_level: string; risk_reason: string; safer_rewrite: string; confidence_score: number; source: string }[] = [];
+    const { data: approved } = await admin
+      .from("claim_examples")
+      .select("claim_text, sector, risk_level, risk_reason, safer_rewrite, confidence_score, source")
+      .eq("approved_for_production", true)
+      .limit(200);
+    if (approved) dbExamples = approved;
+
+    const analysis = runClaimIntelligence({ ...input, sector }, dbExamples);
+    let claimCheckResultId: string | undefined;
+
+    const { data: checkResult } = await admin.from("claim_check_results").insert({
+      user_id: user.id,
+      claim_text: input.claimText,
+      sector,
+      product_category: input.productCategory,
+      region: input.market,
+      channel: input.contextType,
+      risk_level: analysis.riskLevel,
+      risk_score: analysis.riskScore,
+      detected_issues: analysis.riskyPhrases,
+      safer_rewrite: analysis.saferRewrite,
+      confidence_score: analysis.confidenceScore,
+      retrieved_examples: analysis.retrievedExamples,
+      similar_patterns: analysis.similarPatterns,
+      model_version: analysis.modelVersion,
+      rule_version: analysis.rulesVersion,
+      prompt_version: analysis.promptVersion,
+      dataset_version: analysis.datasetVersion,
+      payload: analysis,
+    }).select("id").single();
+
+    if (checkResult) claimCheckResultId = checkResult.id;
+
+    const row = responseRow(input, analysis, claimCheckResultId);
     const { data, error } = await admin.from("claims").insert({
       user_id: user.id,
       product_id: linkedProductId,
@@ -118,16 +169,21 @@ export async function POST(request: Request) {
       const usage = await getUsageSnapshot(user.id);
       return NextResponse.json({
         analysis: row,
-        provider: "rules",
+        provider: "claim-intelligence",
         saved: false,
         warning: "Analysis completed but Supabase could not save it.",
         usage,
       });
     }
 
-    const usage = await getUsageSnapshot(user.id);
+    if (claimCheckResultId && data?.id) {
+      await admin.from("claim_check_results").update({ claim_id: data.id }).eq("id", claimCheckResultId);
+    }
 
-    return NextResponse.json({ analysis: data, provider: "rules", saved: true, usage });
+    const usage = await getUsageSnapshot(user.id);
+    const enrichedRow = { ...data, intelligence: row.intelligence };
+
+    return NextResponse.json({ analysis: enrichedRow, provider: "claim-intelligence", saved: true, usage });
   } catch {
     return NextResponse.json({ error: "Unable to analyze this claim right now." }, { status: 500 });
   }
