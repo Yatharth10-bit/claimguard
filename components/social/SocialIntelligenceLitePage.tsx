@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle, ArrowRight, BarChart3, Instagram, LoaderCircle, Plus, ScanText,
   Sparkles, Upload, X,
@@ -73,6 +73,7 @@ export function SocialIntelligenceLitePage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [activeScan, setActiveScan] = useState<SocialScanPayload | null>(null);
   const [activeAccount, setActiveAccount] = useState<Account | null>(null);
+  const [pendingAccountId, setPendingAccountId] = useState<string | null>(null);
   const [tab, setTab] = useState<"url" | "manual">("url");
 
   const [form, setForm] = useState({
@@ -84,6 +85,14 @@ export function SocialIntelligenceLitePage() {
     captions: "",
   });
 
+  const activeAccountIdRef = useRef<string | null>(null);
+
+  const scrollToAnalytics = () => {
+    requestAnimationFrame(() => {
+      document.getElementById("social-analytics")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -93,11 +102,23 @@ export function SocialIntelligenceLitePage() {
       if (!res.ok) throw new Error(body.error || "Failed to load");
       setAccounts(body.accounts || []);
       setMigrationRequired(Boolean(body.migration_required));
-      const withScan = (body.accounts || []).find((a: Account) => a.latest_scan?.payload);
-      if (withScan?.latest_scan?.payload) {
-        setActiveScan(withScan.latest_scan.payload as SocialScanPayload);
-        setActiveAccount(withScan);
+      const list = (body.accounts || []) as Account[];
+      if (!list.length) {
+        setActiveAccount(null);
+        setActiveScan(null);
+        activeAccountIdRef.current = null;
+        return;
       }
+
+      const preferredId = activeAccountIdRef.current;
+      const pick =
+        (preferredId ? list.find((a) => a.id === preferredId) : null) ||
+        list.find((a) => a.latest_scan?.payload) ||
+        list[0];
+
+      setActiveAccount(pick);
+      activeAccountIdRef.current = pick.id;
+      setActiveScan((pick.latest_scan?.payload as SocialScanPayload) || null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -109,27 +130,11 @@ export function SocialIntelligenceLitePage() {
     void load();
   }, [load]);
 
-  const addAccount = async () => {
-    if (!form.input.trim()) {
-      setError("Enter a profile URL or handle.");
-      return;
-    }
+  const runScan = async (accountId: string, options?: { bio?: string; captions?: string; follower_count?: string; tryPublicFetch?: boolean }) => {
     setScanning(true);
     setError("");
     try {
-      const accRes = await fetch("/api/social-intelligence/accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          input: form.input,
-          platform: form.input.startsWith("http") ? undefined : form.platform,
-          is_competitor: form.is_competitor,
-        }),
-      });
-      const accBody = await accRes.json();
-      if (!accRes.ok) throw new Error(accBody.error || "Failed to add account");
-
-      const manualPosts = form.captions
+      const manualPosts = (options?.captions ?? form.captions)
         .split(/\n---\n|\n\n(?=[A-Z])/)
         .map((c) => c.trim())
         .filter((c) => c.length > 5)
@@ -139,38 +144,93 @@ export function SocialIntelligenceLitePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          account_id: accBody.account.id,
-          bio: form.bio,
-          follower_count_public: form.follower_count ? Number(form.follower_count) : null,
+          account_id: accountId,
+          bio: options?.bio ?? form.bio,
+          follower_count_public: (options?.follower_count ?? form.follower_count)
+            ? Number(options?.follower_count ?? form.follower_count)
+            : null,
           manual_posts: manualPosts,
-          try_public_fetch: tab === "url" && manualPosts.length === 0,
+          try_public_fetch: options?.tryPublicFetch ?? (tab === "url" && manualPosts.length === 0),
         }),
       });
       const scanBody = await scanRes.json();
       if (!scanRes.ok) {
         if (scanRes.status === 422) {
-          setError(scanBody.error || "Paste bio and captions manually.");
+          setPendingAccountId(accountId);
+          setError(scanBody.error || "Auto-fetch failed. Paste bio and captions, then run scan again.");
           setTab("manual");
-          return;
+          setModalOpen(true);
+          return false;
         }
         throw new Error(scanBody.error || "Scan failed");
       }
 
       setActiveScan(scanBody.payload);
-      setActiveAccount({ ...accBody.account, latest_scan: scanBody.scan });
+      const scannedAccount = { ...scanBody.account, latest_scan: scanBody.scan } as Account;
+      setActiveAccount(scannedAccount);
+      activeAccountIdRef.current = scannedAccount.id;
+      setPendingAccountId(null);
       setModalOpen(false);
       setForm({ input: "", platform: "instagram", is_competitor: false, bio: "", follower_count: "", captions: "" });
       await load();
+      scrollToAnalytics();
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Scan failed");
+      return false;
     } finally {
       setScanning(false);
     }
   };
 
-  const selectAccount = (account: Account) => {
+  const addAccount = async () => {
+    if (!pendingAccountId && !form.input.trim()) {
+      setError("Enter a profile URL or handle.");
+      return;
+    }
+    setScanning(true);
+    setError("");
+    try {
+      let accountId = pendingAccountId;
+      let accountRecord: Account | null = activeAccount;
+
+      if (!accountId) {
+        const accRes = await fetch("/api/social-intelligence/accounts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            input: form.input,
+            platform: form.input.startsWith("http") ? undefined : form.platform,
+            is_competitor: form.is_competitor,
+          }),
+        });
+        const accBody = await accRes.json();
+        if (!accRes.ok) throw new Error(accBody.error || "Failed to add account");
+        accountId = accBody.account.id;
+        accountRecord = accBody.account;
+        setActiveAccount(accBody.account);
+        activeAccountIdRef.current = accBody.account.id;
+      }
+
+      await runScan(accountId!);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Scan failed");
+      setScanning(false);
+    }
+  };
+
+  const selectAccount = async (account: Account) => {
     setActiveAccount(account);
-    setActiveScan((account.latest_scan?.payload as SocialScanPayload) || null);
+    activeAccountIdRef.current = account.id;
+    setError("");
+    if (account.latest_scan?.payload) {
+      setActiveScan(account.latest_scan.payload as SocialScanPayload);
+      scrollToAnalytics();
+      return;
+    }
+    setActiveScan(null);
+    scrollToAnalytics();
+    await runScan(account.id, { tryPublicFetch: true });
   };
 
   const scan = activeScan;
@@ -207,17 +267,88 @@ export function SocialIntelligenceLitePage() {
       ) : (
         <>
           {accounts.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {accounts.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => selectAccount(a)}
-                  className={`rounded-full px-4 py-2 text-sm font-bold capitalize transition ${activeAccount?.id === a.id ? "bg-ink text-white" : "bg-stone text-muted hover:text-ink"}`}
-                >
-                  {a.platform} @{a.handle}{a.is_competitor ? " · competitor" : ""}
-                </button>
-              ))}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {accounts.map((a) => {
+                const hasAnalytics = Boolean(a.latest_scan?.payload);
+                const score = a.latest_scan?.overall_score;
+                const isActive = activeAccount?.id === a.id;
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    disabled={scanning && isActive}
+                    onClick={() => void selectAccount(a)}
+                    className={`surface text-left p-4 transition hover:-translate-y-0.5 ${isActive ? "ring-2 ring-lavender" : ""}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-bold capitalize">{a.platform} @{a.handle}</p>
+                        {a.is_competitor && <p className="mt-1 text-xs text-muted">Competitor</p>}
+                      </div>
+                      {hasAnalytics ? (
+                        <span className="rounded-full bg-mint px-2.5 py-1 text-xs font-bold text-safe">{score ?? "—"}/100</span>
+                      ) : (
+                        <span className="rounded-full bg-apricot/30 px-2.5 py-1 text-xs font-bold text-medium">No scan</span>
+                      )}
+                    </div>
+                    <p className="mt-3 text-xs text-muted">
+                      {hasAnalytics
+                        ? `${a.latest_scan?.high_risk_posts_count ?? 0} high-risk posts · View analytics below`
+                        : scanning && isActive
+                          ? "Fetching public profile…"
+                          : "Click to fetch & open analytics"}
+                    </p>
+                    {a.profile_url && (
+                      <a
+                        href={a.profile_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-block text-xs font-semibold text-lavender"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Open profile ↗
+                      </a>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {activeAccount && !scan && !scanning && (
+            <div id="social-analytics" className="surface scroll-mt-6 border-amber-100 bg-amber-50/60 p-6 text-center">
+              <ScanText size={32} className="mx-auto text-medium" />
+              <h3 className="mt-4 text-lg font-bold">No analytics yet for @{activeAccount.handle}</h3>
+              <p className="mx-auto mt-2 max-w-md text-sm text-muted">
+                This account was saved but never scanned (or auto-fetch failed). Run a scan to see health scores, post risks, and safer rewrites.
+              </p>
+              <button
+                type="button"
+                className="primary mt-5"
+                onClick={() => void runScan(activeAccount.id, { tryPublicFetch: true })}
+              >
+                <ScanText size={16} /> Run scan now
+              </button>
+              <button
+                type="button"
+                className="secondary mt-3 ml-2"
+                onClick={() => {
+                  setPendingAccountId(activeAccount.id);
+                  setForm((f) => ({ ...f, input: activeAccount.profile_url || `@${activeAccount.handle}` }));
+                  setModalOpen(true);
+                  setTab("manual");
+                }}
+              >
+                Paste captions manually
+              </button>
+            </div>
+          )}
+
+          {scanning && !scan && (
+            <div id="social-analytics" className="surface scroll-mt-6 p-8 text-center">
+              <LoaderCircle size={32} className="mx-auto animate-spin text-lavender" />
+              <p className="mt-4 font-bold">Scanning @{activeAccount?.handle || "profile"}…</p>
+              <p className="mt-2 text-sm text-muted">Fetching public bio and captions, then running claim analysis.</p>
             </div>
           )}
 
@@ -241,7 +372,7 @@ export function SocialIntelligenceLitePage() {
           )}
 
           {scan && health && (
-            <>
+            <div id="social-analytics" className="scroll-mt-6 space-y-6">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted">{scan.estimated_label}</p>
 
               <section>
@@ -416,7 +547,7 @@ export function SocialIntelligenceLitePage() {
               <Link href="/claim-checker" className="secondary inline-flex">
                 Deep-check a caption in Claim Checker <ArrowRight size={16} />
               </Link>
-            </>
+            </div>
           )}
         </>
       )}

@@ -41,6 +41,18 @@ export async function POST(request: Request) {
       : `https://linkedin.com/company/${handle}`;
   }
 
+  const { data: existing } = await admin
+    .from("social_intelligence_accounts")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("platform", platform)
+    .eq("profile_url", profile_url)
+    .maybeSingle();
+
+  if (existing) {
+    return NextResponse.json({ account: existing, reused: true });
+  }
+
   const { data, error } = await admin
     .from("social_intelligence_accounts")
     .insert({
@@ -57,6 +69,16 @@ export async function POST(request: Request) {
   if (error) {
     if (error.message.includes("does not exist")) {
       return NextResponse.json({ error: "Run supabase/social-intelligence-lite.sql migration first." }, { status: 503 });
+    }
+    if (error.code === "23505") {
+      const { data: dup } = await admin
+        .from("social_intelligence_accounts")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("platform", platform)
+        .eq("profile_url", profile_url)
+        .maybeSingle();
+      if (dup) return NextResponse.json({ account: dup, reused: true });
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
