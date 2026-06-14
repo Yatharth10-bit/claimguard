@@ -32,6 +32,8 @@ const tables = [
   "notifications",
   "social_connections",
   "social_posts",
+  "social_intelligence_accounts",
+  "social_intelligence_scans",
   "label_scans",
   "substantiation_entries",
   "competitor_trackers",

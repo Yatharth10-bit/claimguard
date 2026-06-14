@@ -41,7 +41,7 @@ import { AmazonRiskCard } from "@/components/dashboard/AmazonRiskCard";
 import { ComplianceScoreCard } from "@/components/dashboard/ComplianceScoreCard";
 import { FeatureStatsGrid } from "@/components/dashboard/FeatureStatsGrid";
 import { PersonalizedDashboardHeader, PersonalizedDashboardSections } from "@/components/dashboard/PersonalizedDashboardLayer";
-import { SocialMonitorPage } from "@/components/social/SocialMonitorPage";
+import { SocialIntelligenceLitePage } from "@/components/social/SocialIntelligenceLitePage";
 import { CompetitorsPage } from "@/components/competitors/CompetitorsPage";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { ProductDetailPage } from "@/components/products/ProductDetailPage";
@@ -238,7 +238,7 @@ const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/products", label: "Products", icon: Package },
   { href: "/claim-checker", label: "Claim Checker", icon: Sparkles },
-  { href: "/social", label: "Social Monitor", icon: Instagram },
+  { href: "/social", label: "Social Intelligence", icon: Instagram },
   { href: "/competitors", label: "Competitors", icon: Target },
   { href: "/copy-scanner", label: "Copy Scanner", icon: ScanText },
   { href: "/claims", label: "Saved Claims", icon: ClipboardCheck },
@@ -1704,9 +1704,13 @@ function ClaimLibrary() {
 }
 
 function SocialMonitor() {
+  const { profile, isComplete } = useBrandProfile();
+  const subtitle = isComplete && profile?.sector
+    ? `Free social claim audit for ${profile.brandName || "your brand"} — public data only, estimated analytics.`
+    : "Free AI-powered social claim scanner — public data only. Paste profiles or captions manually.";
   return (
-    <AppShell title="Social Monitor" subtitle="Scan Instagram and TikTok captions for FTC disclosure and FDA claim risk.">
-      <SocialMonitorPage />
+    <AppShell title="Social Intelligence Lite" subtitle={subtitle}>
+      <SocialIntelligenceLitePage />
     </AppShell>
   );
 }

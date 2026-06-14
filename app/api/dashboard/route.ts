@@ -14,7 +14,7 @@ export async function GET() {
     { data: tasks },
     { data: listings },
     { data: scans },
-    { data: posts },
+    { data: socialScans },
     { data: labels },
     { data: substantiation },
     { data: competitors },
@@ -24,7 +24,7 @@ export async function GET() {
     admin.from("tasks").select("status").eq("user_id", user.id),
     admin.from("amazon_listings").select("id").eq("user_id", user.id),
     admin.from("amazon_scan_results").select("overall_risk, amazon_listing_id, amazon_listings!inner(user_id)").eq("amazon_listings.user_id", user.id),
-    admin.from("social_posts").select("scan_status, social_connections!inner(user_id)").eq("social_connections.user_id", user.id),
+    admin.from("social_intelligence_scans").select("high_risk_posts_count").eq("user_id", user.id),
     admin.from("label_scans").select("overall_risk").eq("user_id", user.id),
     admin.from("substantiation_entries").select("id").eq("user_id", user.id).is("deleted_at", null),
     admin.from("competitor_trackers").select("id").eq("user_id", user.id).eq("is_active", true),
@@ -38,7 +38,8 @@ export async function GET() {
     }
   }
 
-  const flaggedPosts = (posts || []).filter((p) => p.scan_status === "flagged").length;
+  const socialScanCount = socialScans?.length || 0;
+  const socialHighRisk = (socialScans || []).reduce((sum, s) => sum + (s.high_risk_posts_count || 0), 0);
 
   const complianceScore = calculateComplianceScore({
     products: products?.length || 0,
@@ -46,7 +47,7 @@ export async function GET() {
     mediumRiskClaims: (claims || []).filter((c) => c.risk_level === "medium").length,
     openTasks: (tasks || []).filter((t) => !["fixed", "approved"].includes(String(t.status).toLowerCase())).length,
     amazonHighRisk: highRiskListingIds.size,
-    socialFlagged: flaggedPosts,
+    socialFlagged: socialHighRisk,
     labelHighRisk: (labels || []).filter((l) => l.overall_risk === "high").length,
     substantiationEntries: substantiation?.length || 0,
     claimsCount: claims?.length || 0,
@@ -55,7 +56,7 @@ export async function GET() {
   return NextResponse.json({
     featureStats: {
       amazon: { listings: listings?.length || 0, high_risk: highRiskListingIds.size },
-      social: { scanned: posts?.length || 0, flagged: flaggedPosts },
+      social: { scanned: socialScanCount, flagged: socialHighRisk },
       labels: labels?.length || 0,
       substantiation: substantiation?.length || 0,
       competitors: competitors?.length || 0,

@@ -14,7 +14,7 @@ export async function GET() {
     { data: tasks },
     { data: listings },
     { data: scans },
-    { data: posts },
+    { data: socialScans },
     { data: labels },
     { data: substantiation },
   ] = await Promise.all([
@@ -23,7 +23,7 @@ export async function GET() {
     admin.from("tasks").select("status").eq("user_id", user.id),
     admin.from("amazon_listings").select("id").eq("user_id", user.id),
     admin.from("amazon_scan_results").select("overall_risk, amazon_listing_id, amazon_listings!inner(user_id)").eq("amazon_listings.user_id", user.id),
-    admin.from("social_posts").select("scan_status, social_connections!inner(user_id)").eq("social_connections.user_id", user.id),
+    admin.from("social_intelligence_scans").select("high_risk_posts_count").eq("user_id", user.id),
     admin.from("label_scans").select("overall_risk").eq("user_id", user.id),
     admin.from("substantiation_entries").select("id").eq("user_id", user.id).is("deleted_at", null),
   ]);
@@ -44,7 +44,7 @@ export async function GET() {
     mediumRiskClaims: (claims || []).filter((c) => c.risk_level === "medium").length,
     openTasks: (tasks || []).filter((t) => !["fixed", "approved"].includes(String(t.status).toLowerCase())).length,
     amazonHighRisk,
-    socialFlagged: (posts || []).filter((p) => p.scan_status === "flagged").length,
+    socialFlagged: (socialScans || []).reduce((sum, s) => sum + (s.high_risk_posts_count || 0), 0),
     labelHighRisk: (labels || []).filter((l) => l.overall_risk === "high").length,
     substantiationEntries: substantiation?.length || 0,
     claimsCount: claims?.length || 0,

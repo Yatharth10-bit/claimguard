@@ -10,7 +10,7 @@ export function FeatureStatsGrid() {
 
   const cards = [
     { href: "/products", label: "Amazon high risk", value: stats?.amazon.high_risk, note: `${stats?.amazon.listings ?? 0} listings`, icon: AlertTriangle, tone: "bg-orange-50 text-orange-600" },
-    { href: "/social", label: "Social flagged", value: stats?.social.flagged, note: `${stats?.social.scanned ?? 0} scanned`, icon: Instagram, tone: "bg-pink-50 text-pink-600" },
+    { href: "/social", label: "Social scans", value: stats?.social.scanned, note: `${stats?.social.flagged ?? 0} flagged`, icon: Instagram, tone: "bg-pink-50 text-pink-600" },
     { href: "/products", label: "Label scans", value: stats?.labels, note: "Product labels", icon: ScanText, tone: "bg-blue-50 text-blue-600" },
     { href: "/products", label: "Substantiation", value: stats?.substantiation, note: "Evidence entries", icon: FileText, tone: "bg-emerald-50 text-emerald-600" },
     { href: "/competitors", label: "Competitors", value: stats?.competitors, note: "Active trackers", icon: Target, tone: "bg-purple-50 text-purple-600" },

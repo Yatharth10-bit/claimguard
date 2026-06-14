@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-06-14 — Social Intelligence Lite (replaces Social Monitor)
+
+### Social Intelligence Lite (`/social`)
+- Free public social claim scanner — no paid APIs; Reddit/YouTube public fetch + manual paste fallback
+- Health overview, bio scanner, post risk table, safer rewrites, content categories, engagement estimates
+- Weekly content ideas, AI improvement suggestions, optional competitor handles
+- All metrics labeled **Estimated from public data** / **Public data only**
+- Tables: `social_intelligence_accounts`, `social_intelligence_scans` (`supabase/social-intelligence-lite.sql`)
+- APIs: `GET/POST /api/social-intelligence`, `POST /api/social-intelligence/accounts`, `POST /api/social-intelligence/scan`
+- Dashboard stats now count Social Intelligence scans (not legacy `social_posts`)
+
+---
+
 ## 2026-06-14 — Megaprompt upgrade (competitors, pricing, performance, claim checker)
 
 ### Competitors page (no longer empty)
