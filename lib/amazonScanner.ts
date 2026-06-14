@@ -1,4 +1,6 @@
-import { analyzeClaim, type AnalyzeClaimInput } from "@/lib/analyzeClaim";
+import type { AnalyzeClaimInput } from "@/lib/analyzeClaim";
+import { analyzeClaimProtected } from "@/lib/claimIntelligence/protectedAnalysis";
+import { scannerSeverity } from "@/lib/workspaceTypes";
 
 export const AMAZON_POLICY_VERSION = "2026-03";
 
@@ -65,13 +67,13 @@ function extractMatches(text: string, field: string, product: { category: string
   const issues: AmazonScanIssue[] = [];
   if (!text.trim()) return issues;
 
-  const analysis = analyzeClaim(baseInput(text, product));
+  const analysis = analyzeClaimProtected(baseInput(text, product));
   for (const phrase of analysis.riskyPhrases) {
     issues.push({
       field,
       phrase,
       rule: "FDA/FTC claim risk",
-      severity: analysis.riskLevel,
+      severity: scannerSeverity(analysis.riskLevel),
       rewrite: analysis.saferRewrite,
     });
   }

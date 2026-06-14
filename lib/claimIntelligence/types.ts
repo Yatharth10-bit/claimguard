@@ -20,7 +20,11 @@ export type RiskCategory =
   | "unsupported_clinical_claim"
   | "ingredient_benefit_claim"
   | "mental_health_claim"
-  | "pain_relief_claim";
+  | "pain_relief_claim"
+  | "skin_whitening_claim"
+  | "detox_cleanse_claim"
+  | "baby_medical_claim"
+  | "pet_veterinary_claim";
 
 export type ClaimExampleRecord = {
   id: string;
@@ -30,7 +34,7 @@ export type ClaimExampleRecord = {
   region: string;
   channel: string;
   claimText: string;
-  riskLevel: "low" | "medium" | "high";
+  riskLevel: "low" | "medium" | "high" | "needs_review";
   riskCategory: RiskCategory;
   riskReason: string;
   saferRewrite: string;
@@ -57,6 +61,8 @@ export type ClaimIntelligenceResult = ClaimAnalysisResult & {
   promptVersion: string;
   datasetVersion: string;
   layersUsed: string[];
+  guardApplied?: boolean;
+  similarPattern?: string;
 };
 
 export type ClaimIntelligenceInput = AnalyzeClaimInput & {

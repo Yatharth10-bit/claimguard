@@ -13,6 +13,8 @@
     "test:products": "tsx scripts/run-product-regression.ts",
     "test:expanded": "tsx scripts/run-expanded-regression.ts",
     "test:batch": "tsx scripts/run-batch-regression.ts",
+    "test:fn": "tsx scripts/run-fn-regression.ts",
+    "test:fn:engine": "tsx scripts/run-fn-regression.ts --engine",
     "train:copilot": "tsx scripts/train-copilot-model.ts",
     "test:plans": "tsx scripts/test-plan-limits.ts",
     "db:deploy": "tsx scripts/deploy-supabase.ts",

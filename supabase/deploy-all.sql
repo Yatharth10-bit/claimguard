@@ -1,7 +1,168 @@
 -- =============================================================================
--- ClaimGuard — complete Supabase migration (idempotent, safe to re-run)
--- Paste this entire file into Supabase Dashboard -> SQL Editor -> Run
+-- ClaimGuard — COMPLETE Supabase migration (idempotent, safe to re-run)
+-- Paste this ENTIRE file into Supabase Dashboard -> SQL Editor -> Run
+--
+-- Includes: core workspace, billing, Amazon/social/labels, Social Intelligence
+-- Lite, Claim Intelligence Engine v4, Known False Negatives, needs_review support
 -- =============================================================================
+
+-- ── 0) Extensions, helpers, and core workspace tables ──
+create extension if not exists "pgcrypto";
+
+create or replace function public.set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.profiles (id, email, full_name)
+  values (new.id, new.email, new.raw_user_meta_data ->> 'full_name')
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users for each row execute function public.handle_new_user();
+
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text,
+  full_name text,
+  company_name text,
+  brand_compliance_profile jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.products (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null check (char_length(name) between 1 and 200),
+  category text not null,
+  market text not null default 'United States FDA + FTC',
+  platforms text[] not null default '{}',
+  ingredients text[] not null default '{}',
+  claims_text text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.claims (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  product_id uuid references public.products(id) on delete set null,
+  original_text text not null check (char_length(original_text) between 3 and 5000),
+  context_type text not null,
+  risk_level text not null,
+  risk_score integer not null check (risk_score between 0 and 100),
+  risky_phrases text[] not null default '{}',
+  explanation text not null,
+  safer_rewrite text not null,
+  sources jsonb not null default '[]',
+  checklist text[] not null default '{}',
+  status text not null default 'needs_review',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.regulation_updates (
+  id uuid primary key default gen_random_uuid(),
+  organization text not null,
+  country text not null,
+  category text not null,
+  title text not null,
+  summary text not null,
+  official_url text not null unique,
+  date_found timestamptz not null default now(),
+  status text not null default 'published',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.user_regulation_status (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  regulation_update_id uuid not null references public.regulation_updates(id) on delete cascade,
+  status text not null default 'unread',
+  notes text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, regulation_update_id)
+);
+
+create table if not exists public.tasks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  product_name text not null,
+  claim_issue text not null,
+  risk_level text not null,
+  source text not null default '',
+  due_date date,
+  status text not null default 'needs_review',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.audit_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  action text not null,
+  detail text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.usage_counters (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  period_key text not null check (period_key ~ '^\d{4}-\d{2}$'),
+  claim_scans integer not null default 0 check (claim_scans >= 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, period_key)
+);
+
+create table if not exists public.feedback_messages (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  category text not null default 'other',
+  message text not null check (char_length(message) between 10 and 4000),
+  created_at timestamptz not null default now()
+);
+
+drop trigger if exists set_products_updated_at on public.products;
+create trigger set_products_updated_at before update on public.products
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_claims_updated_at on public.claims;
+create trigger set_claims_updated_at before update on public.claims
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_user_regulation_status_updated_at on public.user_regulation_status;
+create trigger set_user_regulation_status_updated_at before update on public.user_regulation_status
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_tasks_updated_at on public.tasks;
+create trigger set_tasks_updated_at before update on public.tasks
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_usage_counters_updated_at on public.usage_counters;
+create trigger set_usage_counters_updated_at before update on public.usage_counters
+for each row execute function public.set_updated_at();
+
+create index if not exists products_user_id_idx on public.products(user_id);
+create index if not exists claims_user_id_created_at_idx on public.claims(user_id, created_at desc);
+create index if not exists claims_product_id_idx on public.claims(product_id);
+create index if not exists regulation_updates_date_found_idx on public.regulation_updates(date_found desc);
+create unique index if not exists regulation_updates_official_url_idx on public.regulation_updates(official_url);
+create index if not exists user_regulation_status_user_id_idx on public.user_regulation_status(user_id);
+create index if not exists tasks_user_id_idx on public.tasks(user_id);
+create index if not exists audit_events_user_id_created_at_idx on public.audit_events(user_id, created_at desc);
+create index if not exists usage_counters_user_period_idx on public.usage_counters(user_id, period_key);
+create index if not exists feedback_messages_created_at_idx on public.feedback_messages(created_at desc);
 
 -- ── 1) Profile onboarding column + RLS + backfill ──
 alter table public.profiles add column if not exists brand_compliance_profile jsonb;
@@ -544,7 +705,7 @@ create table if not exists public.claim_examples (
   region varchar(100) not null default 'United States FDA + FTC',
   channel varchar(60) not null default 'Website',
   claim_text text not null,
-  risk_level varchar(10) not null check (risk_level in ('low', 'medium', 'high')),
+  risk_level varchar(20) not null check (risk_level in ('low', 'medium', 'high', 'needs_review')),
   risk_category varchar(60) not null default 'general_wellness_claim',
   risk_reason text not null default '',
   safer_rewrite text not null default '',
@@ -572,7 +733,7 @@ create table if not exists public.claim_check_results (
   product_category varchar(100) not null default '',
   region varchar(100) not null default '',
   channel varchar(60) not null default '',
-  risk_level varchar(10) not null check (risk_level in ('low', 'medium', 'high')),
+  risk_level varchar(20) not null check (risk_level in ('low', 'medium', 'high', 'needs_review')),
   risk_score integer not null default 0,
   detected_issues jsonb not null default '[]',
   safer_rewrite text not null default '',
@@ -731,7 +892,121 @@ values
 on conflict (source_url) do nothing;
 
 insert into public.claim_engine_versions (rule_version, prompt_version, dataset_version, is_production, notes)
-select '2.0.0', '1.0.0', 'seed-50k-v1', true, 'Claim Intelligence Engine v1 — layered rule + retrieval + patterns'
+select '2.2.0', '1.2.0', 'mega-1m-v1', true, 'Claim Intelligence Engine v4 — false negative guard + risk families'
 where not exists (
-  select 1 from public.claim_engine_versions where is_production = true and rule_version = '2.0.0'
+  select 1 from public.claim_engine_versions where is_production = true and rule_version = '2.2.0'
 );
+
+-- ── 8) Known False Negatives (regression + admin review) ──
+create table if not exists public.known_false_negatives (
+  id uuid primary key default gen_random_uuid(),
+  original_claim text not null,
+  product_category varchar(100) not null default '',
+  sector varchar(80) not null default '',
+  incorrect_result varchar(20) not null default 'low',
+  correct_risk_level varchar(20) not null check (correct_risk_level in ('low', 'medium', 'high', 'needs_review')),
+  correct_risk_category varchar(60) not null default '',
+  correct_reason text not null default '',
+  safer_rewrite text not null default '',
+  added_by varchar(120) not null default 'system',
+  approved_for_regression_test boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists known_false_negatives_category_idx on public.known_false_negatives(product_category);
+create index if not exists known_false_negatives_approved_idx on public.known_false_negatives(approved_for_regression_test) where approved_for_regression_test = true;
+create index if not exists known_false_negatives_claim_trgm on public.known_false_negatives using gin (original_claim gin_trgm_ops);
+
+drop trigger if exists set_known_false_negatives_updated_at on public.known_false_negatives;
+create trigger set_known_false_negatives_updated_at before update on public.known_false_negatives
+for each row execute function public.set_updated_at();
+
+alter table public.known_false_negatives enable row level security;
+
+insert into public.known_false_negatives (
+  original_claim, product_category, sector, incorrect_result,
+  correct_risk_level, correct_risk_category, correct_reason, safer_rewrite, added_by
+)
+select v.original_claim, v.product_category, v.sector, v.incorrect_result,
+       v.correct_risk_level, v.correct_risk_category, v.correct_reason, v.safer_rewrite, v.added_by
+from (values
+  ('Make you white', 'Facewash', 'Skincare', 'low', 'high', 'skin_whitening_claim',
+   'Skin whitening / natural skin color change implication for facewash.',
+   'Gently cleanses away impurities and helps skin look fresh, clean, and radiant.', 'megaprompt-seed'),
+  ('Makes your face white', 'Skincare', 'Skincare', 'low', 'high', 'skin_whitening_claim',
+   'Fairness / skin tone change claim.', 'Helps skin look fresh, clean, and radiant.', 'megaprompt-seed'),
+  ('Whitens skin in 7 days', 'Cosmetic', 'Skincare', 'low', 'high', 'skin_whitening_claim',
+   'Rapid skin whitening with timeframe.', 'Helps brighten the appearance of dull skin over time.', 'megaprompt-seed'),
+  ('Get fair skin naturally', 'Beauty', 'Skincare', 'low', 'high', 'skin_whitening_claim',
+   'Fairness / natural skin tone change.', 'Supports a more even-looking complexion.', 'megaprompt-seed'),
+  ('Removes blackness from face', 'Facewash', 'Skincare', 'low', 'high', 'skin_whitening_claim',
+   'Removes darkness / skin tone change implication.', 'Helps skin look refreshed and clean.', 'megaprompt-seed'),
+  ('Reduces melanin', 'Skincare', 'Skincare', 'low', 'high', 'skin_whitening_claim',
+   'Melanin reduction / biological skin color change.', 'Helps improve the look of uneven tone.', 'megaprompt-seed'),
+  ('Cures inflammation', 'Dietary Supplement', 'Supplements', 'low', 'high', 'disease_treatment',
+   'Disease treatment claim for supplement.', 'Supports a healthy inflammatory response.', 'megaprompt-seed'),
+  ('Prevents diabetes', 'Functional Food', 'Food', 'low', 'high', 'disease_prevention',
+   'Disease prevention claim for food.', 'Supports general wellness as part of a balanced diet.', 'megaprompt-seed'),
+  ('Burns belly fat', 'Weight loss', 'Weight loss', 'low', 'high', 'weight_loss_claim',
+   'Guaranteed fat burning claim.', 'Supports fitness goals with a balanced diet and active lifestyle.', 'megaprompt-seed'),
+  ('Cures anxiety', 'Wellness', 'Wellness', 'low', 'high', 'mental_health_claim',
+   'Mental health treatment claim.', 'Supports relaxation and a calm evening routine.', 'megaprompt-seed'),
+  ('Boosts baby immunity', 'Baby products', 'Baby products', 'low', 'high', 'baby_medical_claim',
+   'Medical immunity claim for babies.', 'Gentle for baby and designed for everyday care.', 'megaprompt-seed'),
+  ('Cures dog arthritis', 'Pet products', 'Pet products', 'low', 'high', 'pet_veterinary_claim',
+   'Veterinary treatment claim.', 'Supports joint comfort for everyday pet wellness.', 'megaprompt-seed'),
+  ('This cured my acne', 'Skincare', 'Skincare', 'low', 'high', 'testimonial_risk',
+   'Testimonial with treatment outcome.', 'Individual experiences vary; review before using in marketing.', 'megaprompt-seed'),
+  ('Treats acne', 'Cosmetic', 'Skincare', 'low', 'high', 'cosmetic_drug_boundary',
+   'Acne treatment crosses cosmetic-drug boundary.', 'Helps improve the look of blemish-prone skin.', 'megaprompt-seed'),
+  ('Lose 10 kg in 10 days', 'Weight loss', 'Weight loss', 'low', 'high', 'weight_loss_claim',
+   'Rapid guaranteed weight loss.', 'Supports fitness goals when combined with diet and exercise.', 'megaprompt-seed')
+) as v(original_claim, product_category, sector, incorrect_result, correct_risk_level, correct_risk_category, correct_reason, safer_rewrite, added_by)
+where not exists (
+  select 1 from public.known_false_negatives kfn
+  where kfn.original_claim = v.original_claim and kfn.product_category = v.product_category
+);
+
+-- ── 9) Upgrade existing tables for needs_review risk level (safe if already applied) ──
+alter table public.claims drop constraint if exists claims_risk_level_check;
+alter table public.claims add constraint claims_risk_level_check
+  check (risk_level in ('low', 'medium', 'high', 'needs_review'));
+
+alter table public.tasks drop constraint if exists tasks_risk_level_check;
+alter table public.tasks add constraint tasks_risk_level_check
+  check (risk_level in ('low', 'medium', 'high', 'needs_review'));
+
+alter table public.claims drop constraint if exists claims_status_check;
+alter table public.claims add constraint claims_status_check
+  check (status in ('needs_review', 'fixing', 'fixed', 'approved', 'expert_review_needed'));
+
+alter table public.tasks drop constraint if exists tasks_status_check;
+alter table public.tasks add constraint tasks_status_check
+  check (status in ('needs_review', 'fixing', 'expert_review_needed', 'fixed', 'approved'));
+
+alter table public.user_regulation_status drop constraint if exists user_regulation_status_status_check;
+alter table public.user_regulation_status add constraint user_regulation_status_status_check
+  check (status in ('unread', 'reviewed', 'action_needed', 'dismissed'));
+
+alter table public.feedback_messages drop constraint if exists feedback_messages_category_check;
+alter table public.feedback_messages add constraint feedback_messages_category_check
+  check (category in ('bug', 'feature', 'billing', 'compliance', 'other'));
+
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'claim_examples' and column_name = 'risk_level') then
+    alter table public.claim_examples alter column risk_level type varchar(20);
+    alter table public.claim_examples drop constraint if exists claim_examples_risk_level_check;
+    alter table public.claim_examples add constraint claim_examples_risk_level_check
+      check (risk_level in ('low', 'medium', 'high', 'needs_review'));
+  end if;
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'claim_check_results' and column_name = 'risk_level') then
+    alter table public.claim_check_results alter column risk_level type varchar(20);
+    alter table public.claim_check_results drop constraint if exists claim_check_results_risk_level_check;
+    alter table public.claim_check_results add constraint claim_check_results_risk_level_check
+      check (risk_level in ('low', 'medium', 'high', 'needs_review'));
+  end if;
+end $$;
+
+-- Done. Optional: npm run db:seed-claims (seeds claim_examples from local dataset).

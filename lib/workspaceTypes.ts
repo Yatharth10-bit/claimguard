@@ -1,5 +1,17 @@
 export type Risk = "High risk" | "Medium risk" | "Safe";
-export type RiskLevel = "low" | "medium" | "high";
+export type RiskLevel = "low" | "medium" | "high" | "needs_review";
+
+/** Map needs_review to medium for scanners and legacy consumers. */
+export function scannerSeverity(level: RiskLevel): "low" | "medium" | "high" {
+  return level === "needs_review" ? "medium" : level;
+}
+
+export const RISK_LEVEL_RANK: Record<RiskLevel, number> = {
+  low: 0,
+  needs_review: 1,
+  medium: 2,
+  high: 3,
+};
 export type ClaimStatus = "Needs Review" | "Fixing" | "Fixed" | "Approved" | "Expert Review Needed";
 export type TaskStatus = ClaimStatus;
 

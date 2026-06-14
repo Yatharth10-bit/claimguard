@@ -16,6 +16,7 @@ export function refineRiskLevel(
 ): ClaimAnalysisResult["riskLevel"] {
   if (extraHighHits || refinedScore >= 75) return "high";
   if (refinedScore >= 40 || baseLevel === "medium") return "medium";
+  if (refinedScore >= 28 || baseLevel === "needs_review") return "needs_review";
   return baseLevel;
 }
 

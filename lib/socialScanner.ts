@@ -1,4 +1,5 @@
-import { analyzeClaim } from "@/lib/analyzeClaim";
+import { analyzeClaimProtected } from "@/lib/claimIntelligence/protectedAnalysis";
+import { scannerSeverity } from "@/lib/workspaceTypes";
 
 export type SocialScanFlag = {
   phrase: string;
@@ -12,7 +13,7 @@ export function scanSocialCaption(
   product: { category: string; ingredients: string[]; market: string },
   platform: string,
 ): { scan_status: "clean" | "flagged"; flags: SocialScanFlag[] } {
-  const analysis = analyzeClaim({
+  const analysis = analyzeClaimProtected({
     claimText: caption,
     productCategory: product.category,
     ingredients: product.ingredients,
@@ -23,7 +24,7 @@ export function scanSocialCaption(
   const flags: SocialScanFlag[] = analysis.riskyPhrases.map((phrase) => ({
     phrase,
     rule_triggered: "FDA/FTC social caption risk",
-    severity: analysis.riskLevel,
+    severity: scannerSeverity(analysis.riskLevel),
     rewrite_suggestion: analysis.saferRewrite,
   }));
 

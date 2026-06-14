@@ -1,4 +1,4 @@
-import { analyzeClaim } from "@/lib/analyzeClaim";
+import { analyzeClaimProtected } from "@/lib/claimIntelligence/protectedAnalysis";
 import type { BrandComplianceProfile } from "@/lib/brandProfile";
 import { REGULATORY_SOURCES } from "@/lib/regulatorySources";
 import { channelToContextType, regionToMarket, sectorToProductCategory } from "@/lib/sectorMapping";
@@ -152,7 +152,7 @@ export function getPersonalizedRegulationFeed(profile: BrandComplianceProfile): 
 
 export type FirstClaimPreview = {
   claim: string;
-  riskLevel: "low" | "medium" | "high";
+  riskLevel: import("@/lib/workspaceTypes").RiskLevel;
   riskLabel: string;
   reason: string;
   saferRewrite: string;
@@ -163,7 +163,7 @@ export function analyzeFirstClaimPreview(profile: BrandComplianceProfile): First
   if (!claim) return null;
 
   // Uses deterministic rules engine — swap for AI endpoint when connected.
-  const result = analyzeClaim({
+  const result = analyzeClaimProtected({
     claimText: claim,
     productCategory: sectorToProductCategory(profile.sector),
     ingredients: profile.ingredients.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean),
@@ -173,7 +173,14 @@ export function analyzeFirstClaimPreview(profile: BrandComplianceProfile): First
       : "Website",
   });
 
-  const riskLabel = result.riskLevel === "high" ? "High Risk" : result.riskLevel === "medium" ? "Medium Risk" : "Lower Risk";
+  const riskLabel =
+    result.riskLevel === "high"
+      ? "High Risk"
+      : result.riskLevel === "needs_review"
+        ? "Needs Review"
+        : result.riskLevel === "medium"
+          ? "Medium Risk"
+          : "Lower Risk";
   const reason = result.riskyPhrases.length
     ? `This sounds like ${result.riskyPhrases.slice(0, 2).join(" or ")} language that may create compliance risk.`
     : result.explanation.split(".")[0] + ".";

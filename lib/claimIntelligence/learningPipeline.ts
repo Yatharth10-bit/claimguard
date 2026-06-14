@@ -41,7 +41,7 @@ const SAMPLE_CLAIM_PHRASES = [
 export type ExtractedClaim = {
   claimText: string;
   sector: string;
-  riskLevel: "low" | "medium" | "high";
+  riskLevel: "low" | "medium" | "high" | "needs_review";
   riskCategory: RiskCategory;
   riskReason: string;
   saferRewrite: string;

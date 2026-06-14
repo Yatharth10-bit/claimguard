@@ -1,10 +1,11 @@
 import { analyzeClaim, CLAIM_DISCLAIMER, type AnalyzeClaimInput } from "@/lib/analyzeClaim";
+import type { RiskLevel } from "@/lib/workspaceTypes";
 import { matchClaimRules } from "@/lib/claimRules";
 import { getSourceReferences } from "@/lib/regulatorySources";
 import { matchRegulationImpacts, type WorkflowClaim, type WorkflowProduct, type WorkflowRegulation } from "@/lib/workflow";
 
 export type CopilotClaimContext = AnalyzeClaimInput & {
-  riskLevel: "low" | "medium" | "high";
+  riskLevel: RiskLevel;
   riskScore: number;
   riskyPhrases: string[];
   explanation: string;
@@ -39,7 +40,7 @@ export type RegulationImpactResult = {
   affectedProducts: {
     name: string;
     reason: string;
-    riskLevel: "low" | "medium" | "high";
+    riskLevel: RiskLevel;
     matchedClaims: string[];
     recommendedAction: string;
   }[];

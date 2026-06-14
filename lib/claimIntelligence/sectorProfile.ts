@@ -15,15 +15,15 @@ const PROFILES: SectorRiskProfile[] = [
   },
   {
     sector: "Skincare",
-    priorityPatterns: [/acne|anti[- ]?aging|wrinkle|repair|heal|dermatologist|medical[- ]grade/i],
-    boostScore: 6,
-    focusNote: "Skincare copy can cross the cosmetic-drug boundary with treatment language.",
+    priorityPatterns: [/acne|anti[- ]?aging|wrinkle|repair|heal|dermatologist|medical[- ]grade|whiten|fair(ness)?|melanin|make\s+you\s+white/i],
+    boostScore: 8,
+    focusNote: "Skincare copy can cross the cosmetic-drug boundary with treatment or skin-tone change language.",
   },
   {
     sector: "Skincare / Cosmetics",
-    priorityPatterns: [/acne|anti[- ]?aging|wrinkle|repair|heal|dermatologist/i],
-    boostScore: 6,
-    focusNote: "Cosmetic claims should avoid drug-like structure/function implications.",
+    priorityPatterns: [/acne|anti[- ]?aging|wrinkle|repair|heal|dermatologist|whiten|fair(ness)?|melanin|make\s+you\s+white/i],
+    boostScore: 8,
+    focusNote: "Cosmetic claims should avoid drug-like effects and skin whitening/fairness implications.",
   },
   {
     sector: "Food",

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AlertTriangle, Check, LoaderCircle, Sparkles } from "lucide-react";
 import type { RegulationImpactResult } from "@/lib/complianceCopilot";
+import type { RiskLevel } from "@/lib/workspaceTypes";
 
 type ProductSummary = {
   id: string;
@@ -15,7 +16,7 @@ type ClaimSummary = {
   id: string;
   product: string;
   originalClaim: string;
-  riskLevel: "low" | "medium" | "high";
+  riskLevel: RiskLevel;
   riskyPhrases: string[];
   status: string;
   date: string;
@@ -36,10 +37,11 @@ type RegulationImpactExplainerProps = {
   claims: ClaimSummary[];
 };
 
-const levelStyles = {
+const levelStyles: Record<RiskLevel, string> = {
   high: "bg-rose text-high",
   medium: "bg-apricot text-medium",
   low: "bg-mint text-safe",
+  needs_review: "bg-violet-100 text-violet-700",
 };
 
 export function RegulationImpactExplainer({ regulation, products, claims }: RegulationImpactExplainerProps) {

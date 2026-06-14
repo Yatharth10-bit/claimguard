@@ -1,4 +1,5 @@
 import { CATEGORY_TOPICS } from "@/lib/complianceData";
+import type { RiskLevel } from "@/lib/workspaceTypes";
 
 export type WorkflowProduct = {
   id: string;
@@ -11,7 +12,7 @@ export type WorkflowClaim = {
   id: string;
   product: string;
   originalClaim: string;
-  riskLevel: "low" | "medium" | "high";
+  riskLevel: RiskLevel;
   riskyPhrases: string[];
   status: string;
   date: string;
@@ -32,7 +33,7 @@ export type ImpactMatch = {
   regulation: WorkflowRegulation;
   matchedClaims: string[];
   reason: string;
-  riskLevel: "low" | "medium" | "high";
+  riskLevel: RiskLevel;
   recommendedAction: string;
 };
 

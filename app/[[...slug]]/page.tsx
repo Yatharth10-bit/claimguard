@@ -69,7 +69,7 @@ import { MARKET_OPTIONS, PRODUCT_CATEGORIES } from "@/lib/complianceData";
 import { REGULATORY_SOURCES } from "@/lib/regulatorySources";
 
 type Risk = "High risk" | "Medium risk" | "Safe";
-type RiskLevel = "low" | "medium" | "high";
+type RiskLevel = "low" | "medium" | "high" | "needs_review";
 type ClaimStatus = "Needs Review" | "Fixing" | "Fixed" | "Approved" | "Expert Review Needed";
 type TaskStatus = ClaimStatus;
 
@@ -264,10 +264,14 @@ const levelStyles: Record<RiskLevel, string> = {
   low: "border border-emerald-100 bg-emerald-50 text-emerald-600",
   medium: "border border-amber-100 bg-amber-50 text-amber-600",
   high: "border border-red-100 bg-red-50 text-red-600",
+  needs_review: "border border-violet-100 bg-violet-50 text-violet-700",
 };
 
 function toRisk(level: RiskLevel): Risk {
-  return level === "high" ? "High risk" : level === "medium" ? "Medium risk" : "Safe";
+  if (level === "high") return "High risk";
+  if (level === "medium") return "Medium risk";
+  if (level === "needs_review") return "Medium risk";
+  return "Safe";
 }
 
 function statusToDb(status: ClaimStatus) {

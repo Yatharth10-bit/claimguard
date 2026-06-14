@@ -1,4 +1,5 @@
-import { analyzeClaim } from "@/lib/analyzeClaim";
+import { analyzeClaimProtected } from "@/lib/claimIntelligence/protectedAnalysis";
+import { scannerSeverity } from "@/lib/workspaceTypes";
 
 export type CompetitorClaim = {
   text: string;
@@ -33,7 +34,7 @@ export function scanCompetitorContent(
 
   for (const sentence of sentences) {
     if (!/supports?|helps?|cures?|treats?|prevents?|boosts?|guarantee|proven|clinically|improves?|reduces?|eliminates?|reverses?|anti-aging|immunity|detox|weight|pain|inflammation|miracle|best|#1|dermatologist|fda/i.test(sentence)) continue;
-    const analysis = analyzeClaim({
+    const analysis = analyzeClaimProtected({
       claimText: sentence,
       productCategory: product.category,
       ingredients: [],
@@ -42,7 +43,7 @@ export function scanCompetitorContent(
     });
     const claim: CompetitorClaim = {
       text: sentence,
-      risk: analysis.riskLevel,
+      risk: scannerSeverity(analysis.riskLevel),
       risky_phrases: analysis.riskyPhrases,
     };
     claims_found.push(claim);

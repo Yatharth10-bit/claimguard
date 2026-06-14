@@ -1,4 +1,5 @@
-import { analyzeClaim } from "@/lib/analyzeClaim";
+import { analyzeClaimProtected } from "@/lib/claimIntelligence/protectedAnalysis";
+import { RISK_LEVEL_RANK, scannerSeverity } from "@/lib/workspaceTypes";
 
 export type LabelScanIssue = {
   field: string;
@@ -21,7 +22,6 @@ export function scanLabelText(
   const claims_found: string[] = [];
   const issues: LabelScanIssue[] = [];
   let maxRisk: "low" | "medium" | "high" = "low";
-  const rank = { low: 0, medium: 1, high: 2 };
 
   const supplementSection = lines.filter((l) =>
     /supplement facts|nutrition facts|serving size|amount per serving/i.test(l),
@@ -42,20 +42,21 @@ export function scanLabelText(
     if (/supports?|helps?|promotes?|maintains?|aids?|boosts?|improves?|enhances?/i.test(line)) {
       claims_found.push(line);
     }
-    const analysis = analyzeClaim({
+    const analysis = analyzeClaimProtected({
       claimText: line,
       productCategory: product.category,
       ingredients: product.ingredients,
       market: product.market,
       contextType: "Label",
     });
-    if (rank[analysis.riskLevel] > rank[maxRisk]) maxRisk = analysis.riskLevel;
+    const sev = scannerSeverity(analysis.riskLevel);
+    if (RISK_LEVEL_RANK[analysis.riskLevel] > RISK_LEVEL_RANK[maxRisk]) maxRisk = sev;
     for (const phrase of analysis.riskyPhrases) {
       issues.push({
         field: "label copy",
         phrase,
         rule: "FDA label claim risk",
-        severity: analysis.riskLevel,
+        severity: sev,
         rewrite: analysis.saferRewrite,
       });
     }

@@ -20,6 +20,11 @@ import {
   CLAIM_PROMPT_VERSION,
   CLAIM_RULES_VERSION,
 } from "@/lib/claimIntelligence/versions";
+import {
+  applyFalseNegativeGuard,
+  isKnownSafeMarketingPhrase,
+  runFalseNegativeGuard,
+} from "@/lib/claimIntelligence/falseNegativeGuard";
 
 export type IntelligenceContext = {
   dbExamples?: DbExampleRow[];
@@ -41,16 +46,23 @@ function buildWhyItMatters(riskLevel: string, categories: string[]): string {
   if (riskLevel === "medium") {
     return "This wording may need careful qualification, typicality support, and evidence before use in ads, labels, or social captions.";
   }
+  if (riskLevel === "needs_review") {
+    return "This claim has mixed signals or may be acceptable with substantiation, but the current wording could imply a stronger result than intended.";
+  }
   return "No major phrase-level risk was detected, but context, imagery, and substantiation still matter before publishing.";
 }
 
-function buildNextAction(riskLevel: string, contextType: string): string {
+function buildNextAction(riskLevel: string, contextType: string, guardAction?: string): string {
+  if (guardAction) return guardAction;
   const channel = contextType.toLowerCase();
   if (riskLevel === "high") {
     return `Use the safer rewrite on ${channel}, product pages, and ads. Ask a qualified compliance reviewer before publishing.`;
   }
   if (riskLevel === "medium") {
     return `Consider the safer rewrite for ${channel}. Link the final wording to your substantiation file before approval.`;
+  }
+  if (riskLevel === "needs_review") {
+    return `Use softer, more general wording for ${channel} until proof and region are confirmed.`;
   }
   return `Save this approved wording and confirm substantiation for ${channel} before publishing.`;
 }
@@ -61,13 +73,16 @@ function calibrateConfidence(
   retrieved: { similarity: number }[],
   patternCount: number,
   hasDbRules: boolean,
+  guardConfidence?: number,
 ): number {
-  let base = riskLevel === "high" ? 86 : riskLevel === "medium" ? 78 : 72;
+  if (guardConfidence && guardConfidence >= 85) return Math.min(97, guardConfidence);
+  let base = riskLevel === "high" ? 86 : riskLevel === "medium" ? 78 : riskLevel === "needs_review" ? 68 : 72;
   if (ruleMatches) base += 4;
   if (retrieved[0]?.similarity > 0.35) base += 5;
   if (retrieved[0]?.similarity > 0.5) base += 3;
   if (patternCount) base += 3;
   if (hasDbRules) base += 2;
+  if (guardConfidence) base = Math.max(base, guardConfidence - 5);
   return Math.min(97, base);
 }
 
@@ -78,10 +93,19 @@ export function runClaimIntelligenceQuick(input: ClaimIntelligenceInput): Pick<C
   const level = refineRiskLevel(base.riskLevel, score, dbRules.filter((r) => r.severity === "high").length);
   const staticPhrases = matchClaimRules(input.claimText, input.productCategory, input.market).map((r) => r.displayPhrase || r.phrase);
   const dbPhrases = dbRules.map((r) => r.displayPhrase || r.phrase);
-  return {
+  const preGuard = {
     riskLevel: level,
     riskScore: score,
     riskyPhrases: [...new Set([...staticPhrases, ...dbPhrases])],
+    saferRewrite: base.saferRewrite,
+    explanation: base.explanation,
+  };
+  const guard = runFalseNegativeGuard(input, preGuard);
+  const guarded = applyFalseNegativeGuard(input, { ...base, ...preGuard }, guard);
+  return {
+    riskLevel: guarded.riskLevel,
+    riskScore: guarded.riskScore,
+    riskyPhrases: guarded.riskyPhrases,
     rulesVersion: CLAIM_RULES_VERSION,
   };
 }
@@ -99,6 +123,7 @@ export function runClaimIntelligence(
   const dbRules = context.dbRules || [];
 
   const base = analyzeClaim(input);
+  const safePhrase = isKnownSafeMarketingPhrase(input.claimText);
   const staticRules = matchClaimRules(input.claimText, input.productCategory, input.market);
   const learnedRules = matchDbClaimRules(input.claimText, dbRules, input.productCategory, input.market);
   const allRules = [...staticRules, ...learnedRules];
@@ -110,22 +135,51 @@ export function runClaimIntelligence(
   const regulatory = buildRegulatoryContext(input, allRules);
 
   const refinedScore = refineRiskScore(base, input, learnedRules.length);
-  const riskLevel = refineRiskLevel(base.riskLevel, refinedScore, highRules.length - staticRules.filter((r) => r.severity === "high").length);
+  let riskLevel = safePhrase
+    ? "low"
+    : refineRiskLevel(base.riskLevel, refinedScore, highRules.length - staticRules.filter((r) => r.severity === "high").length);
+  let riskScore = safePhrase ? Math.min(refinedScore, 18) : refinedScore;
   const phrases = [...new Set(allRules.map((r) => r.displayPhrase || r.phrase))];
 
-  const confidenceScore = calibrateConfidence(riskLevel, allRules.length, retrievedExamples, similarPatterns.length, learnedRules.length > 0);
-  const mainIssue = buildMainIssue(riskCategories, phrases.length ? phrases : base.riskyPhrases);
-  const whyItMatters = buildWhyItMatters(riskLevel, riskCategories);
-  const suggestedNextAction = buildNextAction(riskLevel, input.contextType);
-  const saferRewrite = blendSaferRewrite(base.saferRewrite, input.claimText, retrievedExamples, riskLevel);
+  const preGuard = {
+    riskLevel,
+    riskScore,
+    riskyPhrases: phrases.length ? phrases : base.riskyPhrases,
+    saferRewrite: base.saferRewrite,
+    explanation: base.explanation,
+  };
+  const guard = runFalseNegativeGuard(input, preGuard);
+  const guardedBase = applyFalseNegativeGuard(input, { ...base, ...preGuard }, guard);
+  riskLevel = guardedBase.riskLevel;
+  riskScore = guardedBase.riskScore;
 
-  let explanation = base.explanation;
-  if (phrases.length) {
+  let mergedCategories = [...new Set([...riskCategories, ...guard.riskCategories])] as typeof riskCategories;
+  if (guard.triggered && guard.riskCategories.length) {
+    mergedCategories = [...new Set([...guard.riskCategories, ...riskCategories])] as typeof riskCategories;
+  }
+
+  const confidenceScore = calibrateConfidence(
+    riskLevel,
+    allRules.length,
+    retrievedExamples,
+    similarPatterns.length,
+    learnedRules.length > 0,
+    guard.confidence,
+  );
+  const mainIssue = guard.mainIssue || buildMainIssue(mergedCategories, guardedBase.riskyPhrases);
+  const whyItMatters = guard.whyRisky || buildWhyItMatters(riskLevel, mergedCategories);
+  const suggestedNextAction = buildNextAction(riskLevel, input.contextType, guard.suggestedAction);
+  const saferRewrite = guard.saferRewrite || blendSaferRewrite(base.saferRewrite, input.claimText, retrievedExamples, riskLevel);
+
+  let explanation = guardedBase.explanation;
+  if (phrases.length && !guard.mainIssue) {
     const phraseList = phrases.slice(0, 3).join(", ");
     if (riskLevel === "high") {
       explanation = `This claim may be high-risk because it includes language like "${phraseList}" that can imply disease treatment, prevention, or unsubstantiated outcomes. Consider using softer structure/function wording and linking evidence before you publish.`;
     } else if (riskLevel === "medium") {
       explanation = `This wording includes phrases such as "${phraseList}" that often need careful qualification and supporting evidence. A softer rewrite may reduce advertising and labeling risk.`;
+    } else if (riskLevel === "needs_review") {
+      explanation = `This claim may be acceptable with substantiation, but phrases such as "${phraseList}" could imply a stronger result than intended.`;
     }
   }
 
@@ -142,12 +196,13 @@ export function runClaimIntelligence(
   const layersUsed = ["rule", "retrieval", "internet_patterns", "regulatory", "reasoning"];
   if (learnedRules.length) layersUsed.push("db_rules");
   if (input.sector) layersUsed.push("sector_profile");
+  if (guard.triggered) layersUsed.push("false_negative_guard");
 
   const result: ClaimIntelligenceResult = {
     ...base,
     riskLevel,
-    riskScore: refinedScore,
-    riskyPhrases: phrases.length ? phrases : base.riskyPhrases,
+    riskScore,
+    riskyPhrases: guardedBase.riskyPhrases,
     rulesVersion: CLAIM_RULES_VERSION,
     explanation,
     saferRewrite,
@@ -156,13 +211,17 @@ export function runClaimIntelligence(
     mainIssue,
     whyItMatters,
     suggestedNextAction,
-    riskCategories,
-    similarPatterns,
+    riskCategories: mergedCategories,
+    similarPatterns: guard.similarPattern
+      ? [{ pattern: guard.similarPattern, frequency: "Known false-negative pattern", note: guard.whyRisky }, ...similarPatterns]
+      : similarPatterns,
     retrievedExamples,
     modelVersion: CLAIM_MODEL_VERSION,
     promptVersion: CLAIM_PROMPT_VERSION,
     datasetVersion: CLAIM_DATASET_VERSION,
     layersUsed,
+    guardApplied: guard.triggered,
+    similarPattern: guard.similarPattern,
   };
 
   setCachedIntelligence(input, result);

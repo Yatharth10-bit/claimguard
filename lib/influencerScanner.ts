@@ -1,4 +1,5 @@
-import { analyzeClaim } from "@/lib/analyzeClaim";
+import { analyzeClaimProtected } from "@/lib/claimIntelligence/protectedAnalysis";
+import { RISK_LEVEL_RANK, scannerSeverity } from "@/lib/workspaceTypes";
 
 export type InfluencerBriefContent = {
   do_say: string[];
@@ -70,10 +71,8 @@ export function reviewInfluencerScript(
   let maxRisk: "low" | "medium" | "high" = "low";
   const cleanLines: string[] = [];
 
-  const rank = { low: 0, medium: 1, high: 2 };
-
   lines.forEach((line, index) => {
-    const analysis = analyzeClaim({
+    const analysis = analyzeClaimProtected({
       claimText: line,
       productCategory: product.category,
       ingredients: product.ingredients,
@@ -81,13 +80,14 @@ export function reviewInfluencerScript(
       contextType: "Influencer script",
     });
     cleanLines.push(analysis.saferRewrite || line);
-    if (rank[analysis.riskLevel] > rank[maxRisk]) maxRisk = analysis.riskLevel;
+    const sev = scannerSeverity(analysis.riskLevel);
+    if (RISK_LEVEL_RANK[analysis.riskLevel] > RISK_LEVEL_RANK[maxRisk]) maxRisk = sev;
     for (const phrase of analysis.riskyPhrases) {
       issues.push({
         line: index + 1,
         phrase,
         rule: "FDA/FTC influencer script",
-        severity: analysis.riskLevel,
+        severity: sev,
         suggestion: analysis.saferRewrite,
       });
     }

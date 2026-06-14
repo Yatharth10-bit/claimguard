@@ -18,7 +18,7 @@ export type ContentCategory =
   | "Meme / Trend"
   | "Other";
 
-export type RiskLevelLabel = "Safe" | "Low Risk" | "Medium Risk" | "High Risk";
+export type RiskLevelLabel = "Safe" | "Low Risk" | "Medium Risk" | "High Risk" | "Needs Review";
 
 export type PostAnalysis = {
   platform: SocialPlatform;
@@ -92,8 +92,9 @@ function profileContext(profile: BrandComplianceProfile | null) {
   };
 }
 
-function toRiskLabel(level: "low" | "medium" | "high", score: number): RiskLevelLabel {
+function toRiskLabel(level: import("@/lib/workspaceTypes").RiskLevel, score: number): RiskLevelLabel {
   if (level === "high" || score >= 75) return "High Risk";
+  if (level === "needs_review") return "Needs Review";
   if (level === "medium" || score >= 40) return "Medium Risk";
   if (score >= 20) return "Low Risk";
   return "Safe";
@@ -178,7 +179,7 @@ export function analyzePost(
       phrase: "(sector-sensitive language)",
       why: `Common ${ctx.sector} compliance patterns suggest reviewing this caption for regulated claim language.`,
       safer: analysis.saferRewrite,
-      severity: analysis.riskLevel,
+      severity: analysis.riskLevel === "needs_review" ? "medium" : analysis.riskLevel,
     });
   }
 

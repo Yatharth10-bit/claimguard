@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Check, ClipboardList, Copy, LoaderCircle, MessageCircleQuestion, Sparkles, WandSparkles } from "lucide-react";
 import type { ComplianceSop } from "@/lib/sopGenerator";
 import type { ExplainResult, GuidedRewrite } from "@/lib/complianceCopilot";
+import type { RiskLevel } from "@/lib/workspaceTypes";
 
 type CopilotClaimPayload = {
   claimText: string;
@@ -11,7 +12,7 @@ type CopilotClaimPayload = {
   ingredients: string[];
   market: string;
   contextType: string;
-  riskLevel: "low" | "medium" | "high";
+  riskLevel: RiskLevel;
   riskScore: number;
   riskyPhrases: string[];
   explanation: string;

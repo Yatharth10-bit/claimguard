@@ -59,6 +59,12 @@ export const CLAIM_RULES: ClaimRule[] = [
     ["diagnoses", "high", ["Medical Device", "Software / AI"], ["fda-device-label"], "Diagnostic claims can create medical-device intended use and require appropriate authorization."],
     ["detects cancer", "high", ["Medical Device", "Software / AI"], ["fda-device-label"], "Disease detection claims can create high-risk diagnostic-device intended use."],
     ["off-label", "high", ["Prescription Drug", "Medical Device"], ["fda-drug-promotion"], "Off-label promotional claims require specialist regulatory review."],
+    ["make you white", "high", ["Cosmetic", "Skincare"], ["fda-cosmetic-boundary", "ftc-advertising"], "Skin whitening or natural skin color change claims can create strong cosmetic and advertising risk."],
+    ["makes your skin white", "high", ["Cosmetic", "Skincare"], ["fda-cosmetic-boundary", "ftc-advertising"], "Skin whitening or fairness claims may imply changing natural skin tone."],
+    ["skin whitening", "high", ["Cosmetic", "Skincare"], ["fda-cosmetic-boundary", "ftc-advertising"], "Whitening claims can imply permanent skin color change and need careful substantiation."],
+    ["get fair skin", "high", ["Cosmetic", "Skincare"], ["fda-cosmetic-boundary", "ftc-advertising"], "Fairness claims can imply skin tone change beyond cosmetic appearance."],
+    ["reduces melanin", "high", ["Cosmetic", "Skincare"], ["fda-cosmetic-boundary"], "Melanin reduction claims can imply biological skin color change."],
+    ["removes dark skin", "high", ["Cosmetic", "Skincare"], ["fda-cosmetic-boundary", "ftc-advertising"], "Language suggesting removal of natural skin tone can create advertising and labeling risk."],
     ["repairs skin", "high", ["Cosmetic"], ["fda-cosmetic-boundary"], "Claims that alter body structure or function can cause a cosmetic to be regulated as a drug."],
     ["regenerates cells", "high", ["Cosmetic"], ["fda-cosmetic-boundary"], "Cell regeneration claims can imply drug-like effects beyond cosmetic appearance."],
     ["kills germs", "high", ["Household Cleaner", "Consumer Product"], ["epa-cleaner-claims"], "Public-health antimicrobial claims can cause a cleaner or treated article to be regulated as a pesticide."],
@@ -124,6 +130,12 @@ export const REWRITE_RULES = [
   { phrase: "kills germs", replacement: "designed for routine cleaning" },
   { phrase: "disinfects", replacement: "cleans" },
   { phrase: "antibacterial", replacement: "cleaning" },
+  { phrase: "make you white", replacement: "helps skin look fresh, clean, and radiant" },
+  { phrase: "makes your skin white", replacement: "helps skin look fresh, clean, and radiant" },
+  { phrase: "skin whitening", replacement: "helps brighten the appearance of dull skin" },
+  { phrase: "get fair skin", replacement: "helps support a more even-looking complexion" },
+  { phrase: "reduces melanin", replacement: "helps improve the look of uneven tone" },
+  { phrase: "removes dark skin", replacement: "helps skin look refreshed and clean" },
   { phrase: "regenerates cells", replacement: "supports smoother-looking skin" },
   { phrase: "repairs skin", replacement: "supports healthy-looking skin" },
   { phrase: "no side effects", replacement: "use as directed and review relevant safety information" },
@@ -224,6 +236,7 @@ const genericHighActions = new Set([
 const broadContextPhrases = new Set(["performance", "stress"]);
 const therapeuticCategory = /supplement|medical device|health technology|drug|pet care|animal health/i;
 const healthTarget = /\b(disease|cancer|diabet(?:es|ic|ics)|anxiety|depression|arthritis|inflammation|pain|infection|virus|viruses|covid|blood sugar|blood pressure|cholesterol|insomnia|acne|hair loss|injury|injuries|sids|cold|colds|flu|psoriasis|eczema|fungal|plaque|fleas|infestation)\b/i;
+const knownSafePhraseBypass = /\bhealthy\s+inflammatory\s+response\b|\bimmune\s+system\s+health\b|\bjoint\s+comfort\b|\bdigestive\s+wellness\b/i;
 const regulatedBroadClaimCategory = /supplement|food|beverage|cosmetic|personal care|medical|health|drug|pet|animal|baby|children|financial|fitness service|household cleaner/i;
 
 function removeStandardDisclaimer(claimText: string) {
@@ -235,11 +248,22 @@ const COMPILED_RULES = CLAIM_RULES.map((rule) => ({
   pattern: new RegExp(`\\b${rule.phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"),
 }));
 
+function categoryMatches(ruleCategories: string[] | undefined, productCategory?: string) {
+  if (!ruleCategories?.length) return true;
+  if (!productCategory) return false;
+  const lower = productCategory.toLowerCase();
+  return ruleCategories.some((category) => {
+    const cat = category.toLowerCase();
+    return lower === cat || lower.includes(cat) || cat.includes(lower);
+  });
+}
+
 export function matchClaimRules(claimText: string, productCategory?: string, market?: string) {
   const reviewText = removeStandardDisclaimer(claimText);
   return COMPILED_RULES.filter(({ rule, pattern }) => {
-    if (rule.categories?.length && (!productCategory || !rule.categories.some((category) => category.toLowerCase() === productCategory.toLowerCase()))) return false;
+    if (rule.categories?.length && !categoryMatches(rule.categories, productCategory)) return false;
     if (rule.markets?.length && (!market || !rule.markets.some((item) => market.toLowerCase().includes(item.toLowerCase())))) return false;
+    if (knownSafePhraseBypass.test(reviewText) && /inflammation|inflammatory|immunity|immune|joint|digestive|gut/i.test(rule.phrase)) return false;
     if (genericHighActions.has(rule.phrase) && !therapeuticCategory.test(productCategory || "") && !healthTarget.test(reviewText)) return false;
     if (broadContextPhrases.has(rule.phrase) && !regulatedBroadClaimCategory.test(productCategory || "")) return false;
     return pattern.test(reviewText);

@@ -11,7 +11,7 @@ export type AnalyzeClaimInput = {
 };
 
 export type ClaimAnalysisResult = {
-  riskLevel: "low" | "medium" | "high";
+  riskLevel: "low" | "medium" | "high" | "needs_review";
   riskScore: number;
   riskyPhrases: string[];
   explanation: string;
