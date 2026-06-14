@@ -56,3 +56,12 @@ using (auth.uid() = user_id) with check (auth.uid() = user_id);
 drop policy if exists "Users manage own social intel scans" on public.social_intelligence_scans;
 create policy "Users manage own social intel scans" on public.social_intelligence_scans for all to authenticated
 using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Idempotent: one row per user + platform + profile URL
+do $$ begin
+  alter table public.social_intelligence_accounts
+    add constraint social_intel_accounts_user_platform_url_key unique (user_id, platform, profile_url);
+exception
+  when duplicate_object then null;
+  when duplicate_table then null;
+end $$;

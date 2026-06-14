@@ -4,6 +4,7 @@
 --
 -- Includes: core workspace, billing, Amazon/social/labels, Social Intelligence
 -- Lite, Claim Intelligence Engine v4, Known False Negatives, needs_review support
+-- Last verified: 2026-06-14 (social account click-to-scan UX — no new tables)
 -- =============================================================================
 
 -- ── 0) Extensions, helpers, and core workspace tables ──
@@ -693,6 +694,15 @@ using (auth.uid() = user_id) with check (auth.uid() = user_id);
 drop policy if exists "Users manage own social intel scans" on public.social_intelligence_scans;
 create policy "Users manage own social intel scans" on public.social_intelligence_scans for all to authenticated
 using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Idempotent: one row per user + platform + profile URL (e.g. no duplicate Nike accounts)
+do $$ begin
+  alter table public.social_intelligence_accounts
+    add constraint social_intel_accounts_user_platform_url_key unique (user_id, platform, profile_url);
+exception
+  when duplicate_object then null;
+  when duplicate_table then null;
+end $$;
 
 -- ── 7) Claim Intelligence Engine ──
 create extension if not exists pg_trgm;
