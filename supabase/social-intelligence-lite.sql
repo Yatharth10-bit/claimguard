@@ -65,3 +65,92 @@ exception
   when duplicate_object then null;
   when duplicate_table then null;
 end $$;
+
+-- Instagram Social Monitoring extensions (also in deploy-all.sql)
+alter table public.social_intelligence_accounts add column if not exists display_name varchar(300) not null default '';
+alter table public.social_intelligence_accounts add column if not exists website_url text not null default '';
+alter table public.social_intelligence_accounts add column if not exists profile_image_url text not null default '';
+alter table public.social_intelligence_accounts add column if not exists following_count_public integer;
+alter table public.social_intelligence_accounts add column if not exists post_count_public integer;
+alter table public.social_intelligence_accounts add column if not exists scan_error text not null default '';
+
+create table if not exists public.social_intelligence_snapshots (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  account_id uuid not null references public.social_intelligence_accounts(id) on delete cascade,
+  scan_id uuid references public.social_intelligence_scans(id) on delete set null,
+  snapshot_at timestamptz not null default now(),
+  follower_count_public integer,
+  following_count_public integer,
+  post_count_public integer,
+  avg_visible_likes integer,
+  avg_visible_comments integer,
+  estimated_engagement_rate numeric(8,2),
+  high_risk_post_count integer not null default 0,
+  compliance_score integer not null default 0,
+  data_limitations text not null default '',
+  raw_public_data jsonb not null default '{}'
+);
+
+create table if not exists public.social_intelligence_posts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  account_id uuid not null references public.social_intelligence_accounts(id) on delete cascade,
+  scan_id uuid references public.social_intelligence_scans(id) on delete set null,
+  platform varchar(30) not null default 'instagram',
+  post_url text not null default '',
+  shortcode varchar(50) not null default '',
+  caption text not null default '',
+  post_type varchar(20) not null default 'unknown',
+  visible_like_count integer,
+  visible_comment_count integer,
+  posted_at timestamptz,
+  caption_length integer not null default 0,
+  hook_text text not null default '',
+  hook_type varchar(40) not null default '',
+  cta_type varchar(40) not null default '',
+  tone varchar(40) not null default '',
+  content_category varchar(60) not null default '',
+  estimated_engagement_rate numeric(8,2),
+  claim_risk_level varchar(30) not null default '',
+  claim_risk_score integer not null default 0,
+  safer_rewrite text not null default '',
+  confidence_score integer not null default 0,
+  source_type varchar(20) not null default 'manual_paste',
+  is_analyzed boolean not null default false,
+  analyzed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.social_intelligence_alerts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  account_id uuid references public.social_intelligence_accounts(id) on delete cascade,
+  post_id uuid references public.social_intelligence_posts(id) on delete set null,
+  alert_type varchar(50) not null,
+  severity varchar(20) not null default 'medium',
+  title varchar(200) not null,
+  body text not null default '',
+  is_read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists social_intel_snapshots_account_idx on public.social_intelligence_snapshots(account_id, snapshot_at desc);
+create index if not exists social_intel_posts_account_idx on public.social_intelligence_posts(account_id, created_at desc);
+create index if not exists social_intel_alerts_user_idx on public.social_intelligence_alerts(user_id, created_at desc);
+
+alter table public.social_intelligence_snapshots enable row level security;
+alter table public.social_intelligence_posts enable row level security;
+alter table public.social_intelligence_alerts enable row level security;
+
+drop policy if exists "Users manage own social intel snapshots" on public.social_intelligence_snapshots;
+create policy "Users manage own social intel snapshots" on public.social_intelligence_snapshots for all to authenticated
+using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "Users manage own social intel posts" on public.social_intelligence_posts;
+create policy "Users manage own social intel posts" on public.social_intelligence_posts for all to authenticated
+using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "Users manage own social intel alerts" on public.social_intelligence_alerts;
+create policy "Users manage own social intel alerts" on public.social_intelligence_alerts for all to authenticated
+using (auth.uid() = user_id) with check (auth.uid() = user_id);

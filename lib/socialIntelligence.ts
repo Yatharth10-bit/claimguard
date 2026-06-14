@@ -1,4 +1,14 @@
 import { analyzeClaim } from "@/lib/analyzeClaim";
+import {
+  analyzeCaptionIntelligence,
+  buildCtaBreakdown,
+  buildHookBreakdown,
+  detectPostTypeFromUrl,
+  type CtaType,
+  type HookType,
+  type PostTypeLabel,
+} from "@/lib/instagramCaptionAnalysis";
+import { buildStrategicSummary, type StrategicSummarySection } from "@/lib/instagramStrategicSummary";
 import { scanSocialCaption } from "@/lib/socialScanner";
 import type { BrandComplianceProfile } from "@/lib/brandProfile";
 import { regionToMarket, sectorToProductCategory } from "@/lib/sectorMapping";
@@ -24,6 +34,7 @@ export type PostAnalysis = {
   platform: SocialPlatform;
   post_url: string;
   caption_preview: string;
+  post_type: PostTypeLabel;
   visible_likes: number | null;
   visible_comments: number | null;
   engagement_rate_estimate: number | null;
@@ -33,6 +44,14 @@ export type PostAnalysis = {
   risk_reason: string;
   safer_rewrite: string;
   content_category: ContentCategory;
+  hook_text: string;
+  hook_type: HookType;
+  cta_type: CtaType;
+  tone: string;
+  hashtag_count: number;
+  caption_length: number;
+  confidence_score: number;
+  posted_at: string | null;
   risky_phrases: { phrase: string; why: string; safer: string; severity: string }[];
 };
 
@@ -55,20 +74,40 @@ export type WeeklyIdea = {
   compliance_angle: string;
 };
 
+export type AccountOverview = {
+  handle: string;
+  display_name: string;
+  bio: string;
+  profile_url: string;
+  website_url: string;
+  follower_count_public: number | null;
+  following_count_public: number | null;
+  post_count_public: number | null;
+  profile_image_url: string;
+  last_scanned_label: string;
+  scan_status: string;
+  data_limitations: string[];
+};
+
 export type SocialScanPayload = {
   estimated_label: string;
   health_overview: {
     overall_social_health: number;
     compliance_risk: RiskLevelLabel;
+    caption_risk: RiskLevelLabel;
     estimated_engagement: "Low" | "Fair" | "Good" | "Unavailable";
     content_consistency_score: number;
     bio_claim_risk: RiskLevelLabel;
     high_risk_posts_count: number;
+    claim_compliance_score: number;
   };
+  account_overview: AccountOverview;
   bio: BioAnalysis;
   posts: PostAnalysis[];
   content_categories: { category: ContentCategory; count: number }[];
   missing_categories: string[];
+  hook_breakdown: { hook_type: HookType; count: number }[];
+  cta_breakdown: { cta_type: CtaType; count: number }[];
   engagement: {
     avg_likes: number | null;
     avg_comments: number | null;
@@ -76,9 +115,14 @@ export type SocialScanPayload = {
     engagement_note: string;
     best_posts: string[];
     worst_posts: string[];
+    highest_risk_posts: string[];
+    avg_caption_length: number | null;
+    avg_hashtag_count: number | null;
   };
   insights: { type: string; title: string; description: string; action: string }[];
   weekly_ideas: WeeklyIdea[];
+  strategic_summary: StrategicSummarySection[];
+  limitations: string[];
   competitor_note?: string;
 };
 
@@ -193,20 +237,33 @@ export function analyzePost(
   }
 
   const risk_level = toRiskLabel(analysis.riskLevel, analysis.riskScore);
+  const intel = analyzeCaptionIntelligence(caption);
+  const post_type = post.post_type || detectPostTypeFromUrl(post.post_url);
 
   return {
     platform,
     post_url: post.post_url,
     caption_preview: caption.slice(0, 280) + (caption.length > 280 ? "…" : ""),
+    post_type,
     visible_likes: post.visible_likes,
     visible_comments: post.visible_comments,
     engagement_rate_estimate,
-    engagement_note,
+    engagement_note: post.visible_likes == null && post.visible_comments == null
+      ? "Likes are hidden or unavailable from public data."
+      : engagement_note,
     risk_level,
     claim_risk_score: analysis.riskScore,
     risk_reason: analysis.explanation.split(".")[0] + ".",
     safer_rewrite: analysis.saferRewrite,
     content_category: categorizeCaption(caption),
+    hook_text: intel.hook_text,
+    hook_type: intel.hook_type,
+    cta_type: intel.cta_type,
+    tone: intel.tone,
+    hashtag_count: intel.hashtag_count,
+    caption_length: intel.caption_length,
+    confidence_score: intel.confidence_score,
+    posted_at: post.posted_at,
     risky_phrases,
   };
 }
@@ -330,11 +387,20 @@ function buildWeeklyIdeas(profile: BrandComplianceProfile | null, posts: PostAna
 
 export function runSocialIntelligenceScan(input: {
   platform: SocialPlatform;
+  handle: string;
+  profile_url: string;
   bio: string;
   posts: FetchedPost[];
   follower_count_public: number | null;
+  following_count_public?: number | null;
+  post_count_public?: number | null;
+  display_name?: string;
+  website_url?: string;
+  profile_image_url?: string;
   profile: BrandComplianceProfile | null;
   is_competitor?: boolean;
+  scan_status?: string;
+  fetch_message?: string;
 }): SocialScanPayload {
   const bio = analyzeBioText(input.bio, input.profile);
   const posts = input.posts.map((p) =>
@@ -378,30 +444,109 @@ export function runSocialIntelligenceScan(input: {
   const compliance_risk: RiskLevelLabel =
     high_risk > 0 ? "High Risk" : med_risk > 0 ? "Medium Risk" : bio.risk_level;
 
+  const captionScores = posts.map((p) => p.claim_risk_score);
+  const avgCaptionRisk = captionScores.length
+    ? Math.round(captionScores.reduce((a, b) => a + b, 0) / captionScores.length)
+    : 0;
+  const caption_risk: RiskLevelLabel =
+    avgCaptionRisk >= 75 ? "High Risk"
+    : avgCaptionRisk >= 40 ? "Medium Risk"
+    : avgCaptionRisk >= 20 ? "Low Risk"
+    : posts.length ? "Safe" : "Low Risk";
+
+  const limitations: string[] = [
+    "Public data only — no private Instagram analytics.",
+    "Estimated from visible likes, comments, and follower count where available.",
+  ];
+  if (input.follower_count_public == null) {
+    limitations.push("Follower count not publicly visible — engagement rate unavailable.");
+  }
+  if (posts.some((p) => p.visible_likes == null)) {
+    limitations.push("Some posts hide like counts from public view.");
+  }
+  if (input.fetch_message?.includes("failed") || input.fetch_message?.includes("manual")) {
+    limitations.push("Manual scan — auto-fetch was limited.");
+  }
+
+  const riskySorted = [...posts]
+    .filter((p) => p.risk_level === "High Risk" || p.risk_level === "Medium Risk")
+    .sort((a, b) => b.claim_risk_score - a.claim_risk_score);
+
+  const hook_breakdown = buildHookBreakdown(posts);
+  const cta_breakdown = buildCtaBreakdown(posts);
+  const avg_caption_length = posts.length
+    ? Math.round(posts.reduce((s, p) => s + p.caption_length, 0) / posts.length)
+    : null;
+  const avg_hashtag_count = posts.length
+    ? Math.round(posts.reduce((s, p) => s + p.hashtag_count, 0) / posts.length)
+    : null;
+
+  const healthPayload = {
+    overall_social_health: overall,
+    compliance_risk,
+    caption_risk,
+    estimated_engagement: estimated_engagement as "Low" | "Fair" | "Good" | "Unavailable",
+    content_consistency_score: posts.length >= 3 ? 75 : posts.length >= 1 ? 50 : 25,
+    bio_claim_risk: bio.risk_level,
+    high_risk_posts_count: high_risk,
+    claim_compliance_score: compliance_score,
+  };
+
+  const engagementPayload = {
+    avg_likes,
+    avg_comments,
+    engagement_rate_estimate,
+    engagement_note,
+    best_posts: sorted.slice(0, 2).map((p) => p.caption_preview.slice(0, 60)),
+    worst_posts: sorted.slice(-2).reverse().map((p) => p.caption_preview.slice(0, 60)),
+    highest_risk_posts: riskySorted.slice(0, 3).map((p) => p.caption_preview.slice(0, 60)),
+    avg_caption_length,
+    avg_hashtag_count,
+  };
+
+  const weekly_ideas = buildWeeklyIdeas(input.profile, posts);
+
   return {
     estimated_label: "Estimated from public data",
-    health_overview: {
-      overall_social_health: overall,
-      compliance_risk,
-      estimated_engagement,
-      content_consistency_score: posts.length >= 3 ? 75 : posts.length >= 1 ? 50 : 25,
-      bio_claim_risk: bio.risk_level,
-      high_risk_posts_count: high_risk,
+    health_overview: healthPayload,
+    account_overview: {
+      handle: input.handle,
+      display_name: input.display_name || input.handle,
+      bio: input.bio,
+      profile_url: input.profile_url,
+      website_url: input.website_url || "",
+      follower_count_public: input.follower_count_public,
+      following_count_public: input.following_count_public ?? null,
+      post_count_public: input.post_count_public ?? null,
+      profile_image_url: input.profile_image_url || "",
+      last_scanned_label: "Just now",
+      scan_status: input.scan_status || "completed",
+      data_limitations: limitations,
     },
     bio,
     posts,
     content_categories,
     missing_categories,
-    engagement: {
-      avg_likes,
-      avg_comments,
-      engagement_rate_estimate,
-      engagement_note,
-      best_posts: sorted.slice(0, 2).map((p) => p.caption_preview.slice(0, 60)),
-      worst_posts: sorted.slice(-2).map((p) => p.caption_preview.slice(0, 60)),
-    },
+    hook_breakdown,
+    cta_breakdown,
+    engagement: engagementPayload,
     insights: buildInsights(posts, bio, content_categories, input.profile),
-    weekly_ideas: buildWeeklyIdeas(input.profile, posts),
+    weekly_ideas,
+    strategic_summary: buildStrategicSummary({
+      handle: input.handle,
+      bio,
+      posts,
+      payload: {
+        content_categories,
+        missing_categories,
+        engagement: engagementPayload,
+        health_overview: healthPayload,
+        weekly_ideas,
+      },
+      isCompetitor: input.is_competitor,
+      limitations,
+    }),
+    limitations,
     competitor_note: input.is_competitor
       ? "Based on public data only — competitor claim style and frequency are estimates."
       : undefined,

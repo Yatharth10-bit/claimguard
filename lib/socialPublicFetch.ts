@@ -13,7 +13,21 @@ export type FetchedPost = {
   visible_likes: number | null;
   visible_comments: number | null;
   posted_at: string | null;
+  post_type?: "image" | "carousel" | "reel" | "unknown";
+  shortcode?: string;
 };
+
+export type PublicProfileMeta = {
+  display_name: string;
+  website_url: string;
+  profile_image_url: string;
+  following_count_public: number | null;
+  post_count_public: number | null;
+};
+
+export type InstagramInput =
+  | { kind: "profile"; platform: "instagram"; handle: string; profile_url: string }
+  | { kind: "post"; platform: "instagram"; shortcode: string; post_url: string; post_type: "image" | "reel" };
 
 export type PublicFetchResult = {
   platform: SocialPlatform;
@@ -24,6 +38,11 @@ export type PublicFetchResult = {
   posts: FetchedPost[];
   fetch_method: "public_fetch" | "manual_required";
   message: string;
+  display_name?: string;
+  website_url?: string;
+  profile_image_url?: string;
+  following_count_public?: number | null;
+  post_count_public?: number | null;
 };
 
 /** Public web client id used by instagram.com (same as their logged-out web app). */
@@ -75,6 +94,39 @@ export function parseSocialInput(input: string): { platform: SocialPlatform; han
 export function detectPlatformFromUrl(url: string): SocialPlatform | null {
   const parsed = parseSocialInput(url);
   return parsed?.platform ?? null;
+}
+
+/** Normalize Instagram handle, profile URL, or post/reel URL. */
+export function parseInstagramInput(input: string): InstagramInput | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  const postMatch = trimmed.match(/instagram\.com\/(?:p|reel)\/([A-Za-z0-9_-]+)/i);
+  if (postMatch?.[1]) {
+    const shortcode = postMatch[1];
+    const isReel = /instagram\.com\/reel\//i.test(trimmed);
+    const post_url = trimmed.startsWith("http")
+      ? trimmed.split("?")[0]
+      : `https://www.instagram.com/${isReel ? "reel" : "p"}/${shortcode}/`;
+    return { kind: "post", platform: "instagram", shortcode, post_url, post_type: isReel ? "reel" : "image" };
+  }
+
+  const profile = parseSocialInput(trimmed);
+  if (profile?.platform === "instagram") {
+    return { kind: "profile", platform: "instagram", handle: profile.handle, profile_url: profile.profile_url };
+  }
+  if (!trimmed.startsWith("http")) {
+    const handle = trimmed.replace(/^@/, "");
+    if (handle && !INSTAGRAM_RESERVED.has(handle.toLowerCase())) {
+      return {
+        kind: "profile",
+        platform: "instagram",
+        handle,
+        profile_url: `https://instagram.com/${handle}`,
+      };
+    }
+  }
+  return null;
 }
 
 async function fetchRedditPublic(handle: string, isSubreddit: boolean): Promise<Partial<PublicFetchResult>> {
@@ -153,6 +205,12 @@ async function fetchInstagramWebProfileInfo(handle: string): Promise<Partial<Pub
   const bio = String(user.biography || "").trim();
   const follower_count_public =
     typeof user.edge_followed_by?.count === "number" ? user.edge_followed_by.count : null;
+  const following_count_public =
+    typeof user.edge_follow?.count === "number" ? user.edge_follow.count : null;
+  const post_count_public =
+    typeof user.edge_owner_to_timeline_media?.count === "number"
+      ? user.edge_owner_to_timeline_media.count
+      : null;
   const posts = mapInstagramPosts(user.edge_owner_to_timeline_media?.edges, username);
 
   if (!bio && !posts.length) {
@@ -162,6 +220,11 @@ async function fetchInstagramWebProfileInfo(handle: string): Promise<Partial<Pub
   return {
     bio,
     follower_count_public,
+    following_count_public,
+    post_count_public,
+    display_name: String(user.full_name || "").trim(),
+    website_url: String(user.external_url || "").trim(),
+    profile_image_url: String(user.profile_pic_url_hd || user.profile_pic_url || "").trim(),
     posts,
     fetch_method: "public_fetch",
     message: `Fetched public Instagram profile @${username} (${posts.length} recent posts).`,
@@ -219,6 +282,67 @@ async function fetchInstagramHtmlFallback(handle: string): Promise<Partial<Publi
     follower_count_public: null,
     fetch_method: "public_fetch",
     message: `Fetched public Instagram profile @${username} from page HTML (${posts.length} captions).`,
+  };
+}
+
+// TRADEOFF: Single-post fetch uses public HTML/oEmbed only — no login session or Graph API.
+async function fetchInstagramPostPublic(postUrl: string, postType: "image" | "reel"): Promise<FetchedPost | null> {
+  try {
+    const oembedRes = await fetch(
+      `https://www.instagram.com/oembed?url=${encodeURIComponent(postUrl)}`,
+      { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(10000) },
+    );
+    if (oembedRes.ok) {
+      const data = await oembedRes.json();
+      const caption = String(data.title || "").trim();
+      if (caption.length > 3) {
+        return {
+          post_url: postUrl,
+          caption,
+          visible_likes: null,
+          visible_comments: null,
+          posted_at: null,
+          post_type: postType,
+        };
+      }
+    }
+  } catch {
+    // fall through to HTML
+  }
+
+  const res = await fetch(postUrl, {
+    headers: { ...BROWSER_HEADERS, Accept: "text/html" },
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!res.ok) return null;
+  const html = await res.text();
+  const ogDesc = html.match(/property="og:description" content="([^"]+)"/)?.[1];
+  const caption = ogDesc?.replace(/&#39;/g, "'").replace(/&quot;/g, '"') || "";
+  if (!caption || caption.length < 3) return null;
+  return {
+    post_url: postUrl,
+    caption,
+    visible_likes: null,
+    visible_comments: null,
+    posted_at: null,
+    post_type: postType,
+  };
+}
+
+export async function fetchInstagramPostByUrl(postUrl: string): Promise<{
+  post: FetchedPost | null;
+  message: string;
+}> {
+  const parsed = parseInstagramInput(postUrl);
+  if (!parsed || parsed.kind !== "post") {
+    return { post: null, message: "Invalid Instagram post or reel URL." };
+  }
+  const post = await fetchInstagramPostPublic(parsed.post_url, parsed.post_type);
+  return {
+    post,
+    message: post
+      ? `Fetched public caption from Instagram ${parsed.post_type}.`
+      : "We could not fetch this post automatically. Paste the caption manually to continue the free scan.",
   };
 }
 

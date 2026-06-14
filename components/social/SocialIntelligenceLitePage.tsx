@@ -3,10 +3,19 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle, ArrowRight, BarChart3, Instagram, LoaderCircle, Plus, ScanText,
-  Sparkles, Upload, X,
+  AlertTriangle, ArrowRight, BarChart3, Instagram, LoaderCircle, Plus, ScanText, Upload, X,
 } from "lucide-react";
 import { useBrandProfile } from "@/hooks/useBrandProfile";
+import { BioRiskCard } from "@/components/social/monitoring/BioRiskCard";
+import { CompetitorSocialCompare } from "@/components/social/monitoring/CompetitorSocialCompare";
+import { ContentCategoryChart } from "@/components/social/monitoring/ContentCategoryChart";
+import { DataLimitationsBanner } from "@/components/social/monitoring/DataLimitationsBanner";
+import { HookLibrary } from "@/components/social/monitoring/HookLibrary";
+import { InstagramAccountHeader } from "@/components/social/monitoring/InstagramAccountHeader";
+import { SocialAISummary } from "@/components/social/monitoring/SocialAISummary";
+import { SocialHealthCards } from "@/components/social/monitoring/SocialHealthCards";
+import { SocialPostTable } from "@/components/social/monitoring/SocialPostTable";
+import { parseInstagramInput } from "@/lib/socialPublicFetch";
 import type { SocialScanPayload } from "@/lib/socialIntelligence";
 
 type Account = {
@@ -23,32 +32,12 @@ type Account = {
   } | null;
 };
 
-const PLATFORMS = [
-  { id: "instagram", label: "Instagram" },
-  { id: "tiktok", label: "TikTok" },
-  { id: "youtube", label: "YouTube" },
-  { id: "reddit", label: "Reddit" },
-  { id: "x", label: "X.com" },
-  { id: "facebook", label: "Facebook" },
-  { id: "linkedin", label: "LinkedIn" },
-] as const;
-
 const riskStyles: Record<string, string> = {
   "High Risk": "bg-rose text-high",
   "Medium Risk": "bg-apricot text-medium",
   "Low Risk": "bg-mint text-safe",
   Safe: "bg-emerald-50 text-safe",
 };
-
-function HealthCard({ label, value, note }: { label: string; value: string | number; note?: string }) {
-  return (
-    <div className="surface p-4 transition hover:-translate-y-0.5">
-      <p className="text-xs font-bold uppercase tracking-wider text-muted">{label}</p>
-      <p className="mt-2 text-2xl font-extrabold">{value}</p>
-      {note && <p className="mt-1 text-xs text-muted">{note}</p>}
-    </div>
-  );
-}
 
 function ScanSkeleton() {
   return (
@@ -130,7 +119,10 @@ export function SocialIntelligenceLitePage() {
     void load();
   }, [load]);
 
-  const runScan = async (accountId: string, options?: { bio?: string; captions?: string; follower_count?: string; tryPublicFetch?: boolean }) => {
+  const runScan = async (
+    accountId: string,
+    options?: { bio?: string; captions?: string; follower_count?: string; tryPublicFetch?: boolean; post_url?: string },
+  ) => {
     setScanning(true);
     setError("");
     try {
@@ -145,6 +137,7 @@ export function SocialIntelligenceLitePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           account_id: accountId,
+          post_url: options?.post_url,
           bio: options?.bio ?? form.bio,
           follower_count_public: (options?.follower_count ?? form.follower_count)
             ? Number(options?.follower_count ?? form.follower_count)
@@ -194,13 +187,50 @@ export function SocialIntelligenceLitePage() {
       let accountId = pendingAccountId;
       let accountRecord: Account | null = activeAccount;
 
+      const igInput = parseInstagramInput(form.input);
+
+      if (!accountId && igInput?.kind === "post") {
+        const scanRes = await fetch("/api/social-intelligence/scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            post_url: igInput.post_url,
+            bio: form.bio,
+            is_competitor: form.is_competitor,
+            manual_posts: form.captions
+              .split(/\n---\n|\n\n(?=[A-Z])/)
+              .map((c) => c.trim())
+              .filter((c) => c.length > 5)
+              .map((caption) => ({ caption, post_url: igInput.post_url })),
+            try_public_fetch: true,
+          }),
+        });
+        const scanBody = await scanRes.json();
+        if (!scanRes.ok) {
+          if (scanRes.status === 422) {
+            setError(scanBody.error || "Auto-fetch failed. Paste the caption manually.");
+            setTab("manual");
+            return;
+          }
+          throw new Error(scanBody.error || "Scan failed");
+        }
+        setActiveScan(scanBody.payload);
+        setActiveAccount({ ...scanBody.account, latest_scan: scanBody.scan });
+        activeAccountIdRef.current = scanBody.account.id;
+        setModalOpen(false);
+        await load();
+        scrollToAnalytics();
+        setScanning(false);
+        return;
+      }
+
       if (!accountId) {
         const accRes = await fetch("/api/social-intelligence/accounts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             input: form.input,
-            platform: form.input.startsWith("http") ? undefined : form.platform,
+            platform: "instagram",
             is_competitor: form.is_competitor,
           }),
         });
@@ -238,27 +268,29 @@ export function SocialIntelligenceLitePage() {
 
   return (
     <div className="space-y-6">
+      <DataLimitationsBanner limitations={scan?.limitations} />
+
       <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4 text-sm">
-        <p className="font-bold text-ink">Free public scan · Social Intelligence Lite</p>
+        <p className="font-bold text-ink">Instagram Claim Intelligence · Social Monitoring</p>
         <p className="mt-1 text-muted">
-          Estimated from visible public data only. No paid APIs. Connect APIs later for deeper analytics.
-          {isComplete && profile?.sector ? ` Personalized for ${profile.sector} brands.` : ""}
+          Free public Instagram claim audit — compliance risk scanner, safer rewrites, and competitor content intelligence.
+          {isComplete && profile?.sector ? ` Tuned for ${profile.sector} brands.` : ""}
         </p>
       </div>
 
       {migrationRequired && (
         <div className="surface border-amber-200 bg-amber-50 p-4 text-sm">
           <p className="font-bold">Database migration needed</p>
-          <p className="mt-1 text-muted">Run <code className="text-xs">supabase/social-intelligence-lite.sql</code> in Supabase SQL Editor. Manual paste still works after migration.</p>
+          <p className="mt-1 text-muted">Run <code className="text-xs">supabase/deploy-all.sql</code> in Supabase SQL Editor. Manual paste still works after migration.</p>
         </div>
       )}
 
       {error && <div className="surface border-rose/30 bg-rose/10 p-4 text-sm text-high">{error}</div>}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">AI-powered social claim audit and content improvement — public data only.</p>
+        <p className="text-sm text-muted">Paste @handle, profile URL, post/reel URL, or competitor handle.</p>
         <button type="button" className="primary" onClick={() => setModalOpen(true)}>
-          <Plus size={16} /> Add social account
+          <Plus size={16} /> Scan Instagram
         </button>
       </div>
 
@@ -355,10 +387,9 @@ export function SocialIntelligenceLitePage() {
           {!scan && accounts.length === 0 && (
             <div className="surface p-10 text-center">
               <Instagram size={36} className="mx-auto text-muted" />
-              <h3 className="mt-4 text-lg font-bold">Start your free social claim scan</h3>
+              <h3 className="mt-4 text-lg font-bold">Start your free Instagram claim scan</h3>
               <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-                Paste a public Instagram, YouTube, or Reddit profile link for automatic fetch.
-                TikTok, X, Facebook, and LinkedIn still need manual paste if auto-fetch fails.
+                Paste a public Instagram handle, profile URL, post URL, or reel URL. Add competitor handles to compare claim patterns.
               </p>
               <button type="button" className="primary mt-6" onClick={() => setModalOpen(true)}>
                 <ScanText size={16} /> Run free public scan
@@ -375,117 +406,52 @@ export function SocialIntelligenceLitePage() {
             <div id="social-analytics" className="scroll-mt-6 space-y-6">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted">{scan.estimated_label}</p>
 
-              <section>
-                <h3 className="mb-3 font-bold">Social health overview</h3>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-                  <HealthCard label="Overall social health" value={`${health.overall_social_health}/100`} />
-                  <HealthCard label="Compliance risk" value={health.compliance_risk} />
-                  <HealthCard label="Est. engagement" value={health.estimated_engagement} note="Public data only" />
-                  <HealthCard label="Content consistency" value={`${health.content_consistency_score}/100`} />
-                  <HealthCard label="Bio claim risk" value={health.bio_claim_risk} />
-                  <HealthCard label="High-risk posts" value={health.high_risk_posts_count} />
-                </div>
-              </section>
+              <SocialHealthCards scan={scan} />
+
+              {scan.account_overview && (
+                <InstagramAccountHeader
+                  account={scan.account_overview}
+                  isCompetitor={activeAccount?.is_competitor}
+                />
+              )}
+
+              <CompetitorSocialCompare accounts={accounts} />
 
               <div className="grid gap-5 lg:grid-cols-2">
-                <section className="surface p-5">
-                  <h3 className="font-bold">Bio scanner</h3>
-                  <p className="mt-1 text-xs text-muted">{scan.estimated_label}</p>
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <span className="text-sm text-muted">Bio risk score:</span>
-                    <span className={`rounded-full px-3 py-1 text-xs font-bold ${riskStyles[scan.bio.risk_level] || ""}`}>
-                      {scan.bio.risk_level} ({scan.bio.bio_risk_score})
-                    </span>
-                    <span className="text-sm text-muted">Clarity: {scan.bio.brand_clarity_score}/100</span>
-                  </div>
-                  {scan.bio.original_bio && (
-                    <blockquote className="mt-4 rounded-xl bg-stone p-3 text-sm">{scan.bio.original_bio}</blockquote>
-                  )}
-                  {scan.bio.risky_words.length > 0 && (
-                    <p className="mt-3 text-sm"><strong>Risky words:</strong> {scan.bio.risky_words.join(", ")}</p>
-                  )}
-                  <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3 text-sm">
-                    <p className="text-xs font-bold uppercase text-muted">Safer bio rewrite</p>
-                    <p className="mt-1">{scan.bio.safer_bio_rewrite}</p>
-                  </div>
-                  <p className="mt-3 text-xs text-muted">{scan.bio.cta_improvement}</p>
-                </section>
-
+                <BioRiskCard bio={scan.bio} label={scan.estimated_label} />
                 <section className="surface p-5">
                   <div className="flex items-center gap-2">
                     <BarChart3 size={18} className="text-lavender" />
-                    <h3 className="font-bold">Estimated engagement</h3>
+                    <h3 className="font-bold">Instagram performance intelligence</h3>
                   </div>
                   <p className="mt-1 text-xs text-muted">{scan.engagement.engagement_note}</p>
                   <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-                    <div><span className="text-muted">Avg likes</span><p className="font-bold">{scan.engagement.avg_likes ?? "—"}</p></div>
-                    <div><span className="text-muted">Avg comments</span><p className="font-bold">{scan.engagement.avg_comments ?? "—"}</p></div>
-                    <div className="col-span-2">
-                      <span className="text-muted">Engagement rate estimate</span>
-                      <p className="font-bold">{scan.engagement.engagement_rate_estimate != null ? `${scan.engagement.engagement_rate_estimate}%` : "Unavailable"}</p>
-                    </div>
+                    <div><span className="text-muted">~Avg likes</span><p className="font-bold">{scan.engagement.avg_likes ?? "Unavailable from public data."}</p></div>
+                    <div><span className="text-muted">~Avg comments</span><p className="font-bold">{scan.engagement.avg_comments ?? "—"}</p></div>
+                    <div><span className="text-muted">~Engagement rate</span><p className="font-bold">{scan.engagement.engagement_rate_estimate != null ? `~${scan.engagement.engagement_rate_estimate}%` : "Unavailable from public data."}</p></div>
+                    <div><span className="text-muted">~Caption length</span><p className="font-bold">{scan.engagement.avg_caption_length ?? "—"}</p></div>
                   </div>
                   {scan.engagement.best_posts.length > 0 && (
                     <div className="mt-4">
-                      <p className="text-xs font-bold text-muted">Top visible posts</p>
+                      <p className="text-xs font-bold text-muted">Best visible posts</p>
                       <ul className="mt-2 space-y-1 text-sm text-muted">{scan.engagement.best_posts.map((p, i) => <li key={i}>· {p}</li>)}</ul>
+                    </div>
+                  )}
+                  {scan.engagement.highest_risk_posts && scan.engagement.highest_risk_posts.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-xs font-bold text-muted">Highest-risk posts</p>
+                      <ul className="mt-2 space-y-1 text-sm text-high">{scan.engagement.highest_risk_posts.map((p, i) => <li key={i}>· {p}</li>)}</ul>
                     </div>
                   )}
                 </section>
               </div>
 
-              <section className="surface p-5">
-                <h3 className="font-bold">Content category analysis</h3>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {scan.content_categories.map((c) => (
-                    <span key={c.category} className="rounded-full bg-stone px-3 py-1 text-xs font-bold">
-                      {c.category}: {c.count}
-                    </span>
-                  ))}
-                </div>
-                {scan.missing_categories.length > 0 && (
-                  <ul className="mt-4 space-y-2 text-sm text-muted">
-                    {scan.missing_categories.map((m) => <li key={m}>→ {m}</li>)}
-                  </ul>
-                )}
-              </section>
+              <div className="grid gap-5 lg:grid-cols-2">
+                <ContentCategoryChart scan={scan} />
+                <HookLibrary scan={scan} />
+              </div>
 
-              <section className="surface overflow-hidden p-5">
-                <h3 className="font-bold">Public post analysis</h3>
-                <p className="mt-1 text-xs text-muted">{scan.estimated_label}</p>
-                {scan.posts.length === 0 ? (
-                  <p className="mt-4 text-sm text-muted">No posts analyzed. Paste captions in a new scan.</p>
-                ) : (
-                  <div className="mt-4 overflow-x-auto">
-                    <table className="w-full min-w-[720px] text-left text-sm">
-                      <thead>
-                        <tr className="border-b text-xs uppercase tracking-wider text-muted">
-                          <th className="py-2 pr-3">Platform</th>
-                          <th className="py-2 pr-3">Caption</th>
-                          <th className="py-2 pr-3">Likes</th>
-                          <th className="py-2 pr-3">Comments</th>
-                          <th className="py-2 pr-3">Risk</th>
-                          <th className="py-2">Safer rewrite</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {scan.posts.map((post, i) => (
-                          <tr key={i} className="border-b border-slate-100 align-top">
-                            <td className="py-3 pr-3 capitalize">{post.platform}</td>
-                            <td className="max-w-xs py-3 pr-3">{post.caption_preview}</td>
-                            <td className="py-3 pr-3">{post.visible_likes ?? "—"}</td>
-                            <td className="py-3 pr-3">{post.visible_comments ?? "—"}</td>
-                            <td className="py-3 pr-3">
-                              <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${riskStyles[post.risk_level]}`}>{post.risk_level}</span>
-                            </td>
-                            <td className="py-3 text-xs text-muted">{post.safer_rewrite.slice(0, 120)}…</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
+              <SocialPostTable posts={scan.posts} label={scan.estimated_label} />
 
               {scan.posts.some((p) => p.risky_phrases.length > 0) && (
                 <section className="surface p-5">
@@ -503,39 +469,22 @@ export function SocialIntelligenceLitePage() {
                 </section>
               )}
 
-              <div className="grid gap-5 lg:grid-cols-2">
-                <section className="surface p-5">
-                  <div className="flex items-center gap-2">
-                    <Sparkles size={18} className="text-[#14a995]" />
-                    <h3 className="font-bold">AI improvement suggestions</h3>
-                  </div>
-                  <ul className="mt-4 space-y-4">
-                    {scan.insights.map((ins, i) => (
-                      <li key={i} className="text-sm">
-                        <p className="font-bold">{ins.title}</p>
-                        <p className="mt-1 text-muted">{ins.description}</p>
-                        <p className="mt-2 text-xs font-semibold text-lavender">{ins.action}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
+              {scan.strategic_summary && scan.strategic_summary.length > 0 && (
+                <SocialAISummary sections={scan.strategic_summary} />
+              )}
 
-                <section className="surface p-5">
-                  <h3 className="font-bold">Weekly content ideas</h3>
-                  <p className="mt-1 text-xs text-muted">Based on your sector and scan results · compliance-safe angles</p>
-                  <div className="mt-4 space-y-4">
-                    {scan.weekly_ideas.slice(0, 5).map((idea, i) => (
-                      <div key={i} className="rounded-xl border border-slate-100 p-4 text-sm">
-                        <p className="font-bold">{idea.title}</p>
-                        <p className="mt-1 text-xs text-muted">{idea.format} · {idea.compliance_angle}</p>
-                        <p className="mt-2"><strong>Hook:</strong> {idea.hook}</p>
-                        <p className="mt-1 text-muted">{idea.caption_direction}</p>
-                        <p className="mt-2 text-xs font-semibold">CTA: {idea.cta}</p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              </div>
+              <section className="surface p-5">
+                <h3 className="font-bold">Quick insights</h3>
+                <ul className="mt-4 space-y-4">
+                  {scan.insights.map((ins, i) => (
+                    <li key={i} className="text-sm">
+                      <p className="font-bold">{ins.title}</p>
+                      <p className="mt-1 text-muted">{ins.description}</p>
+                      <p className="mt-2 text-xs font-semibold text-lavender">{ins.action}</p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
 
               {scan.competitor_note && (
                 <div className="flex items-start gap-3 rounded-xl border border-slate-100 bg-stone p-4 text-sm text-muted">
@@ -557,8 +506,8 @@ export function SocialIntelligenceLitePage() {
           <div className="surface max-h-[90vh] w-full max-w-lg overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="text-lg font-bold">Free public scan</h3>
-                <p className="mt-1 text-xs text-muted">Public data only · estimated analytics</p>
+                <h3 className="text-lg font-bold">Instagram public scan</h3>
+                <p className="mt-1 text-xs text-muted">Profile, post, or reel URL · manual fallback if blocked</p>
               </div>
               <button type="button" className="secondary !px-2.5 !py-2" onClick={() => setModalOpen(false)}><X size={16} /></button>
             </div>
@@ -568,15 +517,13 @@ export function SocialIntelligenceLitePage() {
             </div>
             <div className="mt-5 space-y-4">
               <div>
-                <label className="label">{tab === "url" ? "Profile URL or @handle" : "Handle (for labeling)"}</label>
-                <input className="input" value={form.input} onChange={(e) => setForm({ ...form, input: e.target.value })} placeholder="https://instagram.com/brand or @brand" />
+                <label className="label">{tab === "url" ? "Instagram @handle, profile, post, or reel URL" : "Handle (for labeling)"}</label>
+                <input className="input" value={form.input} onChange={(e) => setForm({ ...form, input: e.target.value })} placeholder="@brand · instagram.com/brand · instagram.com/p/… · instagram.com/reel/…" />
               </div>
-              {tab === "url" && !form.input.startsWith("http") && (
-                <div>
-                  <label className="label">Platform</label>
-                  <select className="input" value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })}>
-                    {PLATFORMS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-                  </select>
+              {tab === "manual" && (
+                <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-3 text-xs text-muted">
+                  <p className="font-bold text-ink">Public scan limited</p>
+                  <p className="mt-1">Instagram did not expose enough public data. Paste bio and captions below — ClaimGuard will still generate a full claim risk report.</p>
                 </div>
               )}
               <label className="flex items-center gap-2 text-sm">

@@ -243,7 +243,7 @@ const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/products", label: "Products", icon: Package },
   { href: "/claim-checker", label: "Claim Checker", icon: Sparkles },
-  { href: "/social", label: "Social Intelligence", icon: Instagram },
+  { href: "/social", label: "Social Monitoring", icon: Instagram },
   { href: "/competitors", label: "Competitors", icon: Target },
   { href: "/copy-scanner", label: "Copy Scanner", icon: ScanText },
   { href: "/claims", label: "Saved Claims", icon: ClipboardCheck },
@@ -1777,10 +1777,10 @@ function AdminLearningCenter() {
 function SocialMonitor() {
   const { profile, isComplete } = useBrandProfile();
   const subtitle = isComplete && profile?.sector
-    ? `Free social claim audit for ${profile.brandName || "your brand"} — public data only, estimated analytics.`
-    : "Free AI-powered social claim scanner — auto-fetches public Instagram, YouTube, and Reddit.";
+    ? `Instagram claim intelligence for ${profile.brandName || "your brand"} — public data only, compliance risk scanner.`
+    : "Free Instagram claim audit — public profile & caption scan, safer rewrites, competitor intelligence.";
   return (
-    <AppShell title="Social Intelligence Lite" subtitle={subtitle}>
+    <AppShell title="Social Monitoring" subtitle={subtitle}>
       <SocialIntelligenceLitePage />
     </AppShell>
   );
