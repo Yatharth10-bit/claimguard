@@ -1,5 +1,6 @@
 import { ShieldCheck } from "lucide-react";
 import { REGRESSION_STATS } from "@/lib/claimLearnings";
+import { getDistinctProductCount, getMegaDatasetSize } from "@/lib/claimIntelligence/megaSeedGenerator";
 
 type RegressionCoverageBadgeProps = {
   compact?: boolean;
@@ -21,9 +22,9 @@ export function RegressionCoverageBadge({ compact = false }: RegressionCoverageB
         <ShieldCheck size={18} />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-safe">Rules engine validated across {REGRESSION_STATS.totalProducts} product scenarios</p>
+        <p className="text-sm font-bold text-safe">1M+ claim catalog · {getDistinctProductCount().toLocaleString()} distinct products · {REGRESSION_STATS.totalProducts} regression scenarios</p>
         <p className="mt-1 text-xs leading-5 text-muted">
-          {REGRESSION_STATS.sectors} categories · {REGRESSION_STATS.classificationAccuracy} classification · {REGRESSION_STATS.rewriteSafety} high-risk rewrite safety
+          {getMegaDatasetSize().toLocaleString()} virtual examples · 27 sectors · {REGRESSION_STATS.classificationAccuracy} regression accuracy
         </p>
       </div>
     </div>

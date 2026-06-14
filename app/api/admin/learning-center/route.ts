@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminAuth";
 import { runClaimEvaluation } from "@/lib/claimIntelligence/evaluation";
-import { getSeedDatasetSize } from "@/lib/claimIntelligence/seedDataset";
+import { getDistinctProductCount, getMegaDatasetSize } from "@/lib/claimIntelligence/megaSeedGenerator";
 import {
   CLAIM_DATASET_VERSION,
   CLAIM_PROMPT_VERSION,
@@ -41,7 +41,8 @@ export async function GET() {
     tablesMissing,
     migration: "supabase/claim-intelligence-engine.sql",
     stats: {
-      seedDatasetSize: getSeedDatasetSize(),
+      seedDatasetSize: getMegaDatasetSize(),
+      distinctProducts: getDistinctProductCount(),
       dbExamples: dbExamples ?? 0,
       approvedExamples: approvedExamples ?? 0,
       pendingReview: pendingReview ?? 0,

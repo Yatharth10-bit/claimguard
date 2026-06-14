@@ -1,12 +1,15 @@
 /**
- * Seeds claim_examples from in-memory seed dataset.
+ * Seeds claim_examples from the 1M+ mega catalog.
  * Run after claim-intelligence-engine.sql migration.
- * Usage: npm run db:seed-claims
+ *
+ * Usage:
+ *   npm run db:seed-claims
+ *   SEED_LIMIT=1000000 npm run db:seed-claims   # full 1M (takes hours)
  */
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import { createClient } from "@supabase/supabase-js";
-import { getSeedExamples } from "../lib/claimIntelligence/seedDataset";
+import { getMegaDatasetSize, iterateMegaBatchLight } from "../lib/claimIntelligence/megaSeedGenerator";
 
 function loadEnv() {
   const text = readFileSync(resolve(__dirname, "../.env.local"), "utf8");
@@ -28,15 +31,19 @@ const admin = createClient(
 );
 
 const BATCH = 500;
-const MAX_INSERT = Number(process.env.SEED_LIMIT || 15000);
+const MAX_INSERT = Math.min(
+  Number(process.env.SEED_LIMIT || 50_000),
+  getMegaDatasetSize(),
+);
+const START = Number(process.env.SEED_START || 0);
 
 async function main() {
-  const examples = getSeedExamples().slice(0, MAX_INSERT);
-  console.log(`Seeding ${examples.length} claim examples…`);
+  console.log(`Seeding ${MAX_INSERT.toLocaleString()} from mega catalog (${getMegaDatasetSize().toLocaleString()} total virtual rows)…`);
 
   let inserted = 0;
-  for (let i = 0; i < examples.length; i += BATCH) {
-    const chunk = examples.slice(i, i + BATCH).map((ex) => ({
+  for (let offset = 0; offset < MAX_INSERT; offset += BATCH) {
+    const size = Math.min(BATCH, MAX_INSERT - offset);
+    const chunk = [...iterateMegaBatchLight(START + offset, size)].map((ex) => ({
       sector: ex.sector,
       product_category: ex.productCategory,
       product_type: ex.productType,
@@ -49,10 +56,9 @@ async function main() {
       safer_rewrite: ex.saferRewrite,
       confidence_score: ex.confidenceScore,
       source: ex.source,
-      source_url: ex.sourceUrl,
       trust_score: ex.trustScore,
       reviewed: ex.trustScore >= 85,
-      approved_for_production: ex.trustScore >= 90,
+      approved_for_production: ex.trustScore >= 88,
     }));
 
     const { error } = await admin.from("claim_examples").insert(chunk);
@@ -64,10 +70,10 @@ async function main() {
       process.exit(1);
     }
     inserted += chunk.length;
-    console.log(`  ${inserted}/${examples.length}`);
+    console.log(`  ${inserted.toLocaleString()}/${MAX_INSERT.toLocaleString()}`);
   }
 
-  console.log(`Done. ${inserted} examples inserted.`);
+  console.log(`Done. ${inserted.toLocaleString()} examples inserted.`);
 }
 
 main().catch((e) => {

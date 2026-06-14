@@ -1,5 +1,5 @@
-import type { ClaimIntelligenceInput, ClaimExampleRecord, RetrievedExample } from "@/lib/claimIntelligence/types";
-import { getSeedExamplesForQuery } from "@/lib/claimIntelligence/seedDataset";
+import type { ClaimIntelligenceInput, RetrievedExample } from "@/lib/claimIntelligence/types";
+import { retrieveFromMegaDataset } from "@/lib/claimIntelligence/megaSeedGenerator";
 import { jaccardSimilarity } from "@/lib/claimIntelligence/similarity";
 
 export type DbExampleRow = {
@@ -17,13 +17,12 @@ export function retrieveSimilarExamples(
   dbExamples: DbExampleRow[] = [],
   limit = 5,
 ): RetrievedExample[] {
-  const pool: ClaimExampleRecord[] = getSeedExamplesForQuery(input.sector, 1200);
-
+  const pool = retrieveFromMegaDataset(input.claimText, input.sector, input.productCategory, 12);
   const scored: RetrievedExample[] = [];
 
   for (const ex of pool) {
     const sim = jaccardSimilarity(input.claimText, ex.claimText);
-    if (sim < 0.08) continue;
+    if (sim < 0.05) continue;
     let bonus = 0;
     if (input.productCategory && ex.productCategory === input.productCategory) bonus += 0.05;
     if (input.contextType && ex.channel === input.contextType) bonus += 0.03;

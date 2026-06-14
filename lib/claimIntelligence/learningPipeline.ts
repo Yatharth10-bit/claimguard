@@ -1,7 +1,7 @@
 import { REGULATORY_SOURCES } from "@/lib/regulatorySources";
 import { analyzeClaim } from "@/lib/analyzeClaim";
 import { syncRegulations } from "@/lib/syncRegulations";
-import { getSeedExamples } from "@/lib/claimIntelligence/seedDataset";
+import { retrieveFromMegaDataset } from "@/lib/claimIntelligence/megaSeedGenerator";
 import type { RiskCategory } from "@/lib/claimIntelligence/types";
 import { detectRiskCategories } from "@/lib/claimIntelligence/riskCategories";
 
@@ -131,7 +131,7 @@ export async function runRegulatoryLearningFetch(limit = 4): Promise<ExtractedCl
 }
 
 export function generateSyntheticLearningBatch(): ExtractedClaim[] {
-  const fromSeed = getSeedExamples()
+  const fromSeed = retrieveFromMegaDataset("supplement wellness immune skin", "Supplements", "Dietary Supplement", 30)
     .filter((e) => e.trustScore >= 85)
     .slice(0, 20)
     .map((e) => ({

@@ -18,6 +18,7 @@
     "db:deploy": "tsx scripts/deploy-supabase.ts",
     "db:check": "tsx scripts/check-supabase-tables.ts",
     "db:seed-claims": "tsx scripts/seed-claim-examples.ts",
+    "generate:million-claims": "tsx scripts/generate-million-claims.ts",
     "eval:claims": "tsx -e \"import { runClaimEvaluation } from './lib/claimIntelligence/evaluation'; console.log(JSON.stringify(runClaimEvaluation(500), null, 2))\"",
     "deploy:vercel": "vercel --prod"
   },
