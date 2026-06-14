@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/apiAuth";
+import { loadBrandProfileServer } from "@/lib/brandProfileServer";
 import { scanCompetitorContent } from "@/lib/competitorScanner";
+import { regionToMarket, sectorToProductCategory } from "@/lib/sectorMapping";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -39,10 +41,15 @@ export async function POST(request: Request, { params }: Params) {
     .limit(1)
     .maybeSingle();
 
-  const result = scanCompetitorContent(parsed.data.raw_content, {
-    category: "Dietary Supplement",
-    market: "United States FDA + FTC",
-  });
+  const profile = await loadBrandProfileServer(user.id);
+  const market = profile?.salesRegions?.[0]
+    ? regionToMarket(profile.salesRegions[0])
+    : "United States FDA + FTC";
+  const category = profile?.sector
+    ? sectorToProductCategory(profile.sector)
+    : "Dietary Supplement";
+
+  const result = scanCompetitorContent(parsed.data.raw_content, { category, market });
 
   const changed = previous ? previous.content_hash !== result.content_hash : false;
 

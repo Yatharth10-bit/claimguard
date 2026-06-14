@@ -11,6 +11,7 @@ import {
   getSectorRiskCards,
   riskCardToneClass,
 } from "@/lib/personalizedDashboard";
+import { getSectorInsights } from "@/lib/competitorInsights";
 
 type PersonalizedHeaderProps = {
   profile: BrandComplianceProfile;
@@ -31,6 +32,7 @@ export function PersonalizedDashboardSections({ profile }: PersonalizedSectionsP
   const riskCards = getSectorRiskCards(profile);
   const regulationFeed = getPersonalizedRegulationFeed(profile);
   const firstClaim = analyzeFirstClaimPreview(profile);
+  const sectorInsights = getSectorInsights(profile.sector || "Other");
   const prominent = riskCards.filter((card) => card.prominent);
   const regular = riskCards.filter((card) => !card.prominent);
 
@@ -98,6 +100,22 @@ export function PersonalizedDashboardSections({ profile }: PersonalizedSectionsP
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="surface p-5 sm:p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-bold">High-risk words to avoid</h2>
+            <p className="mt-1 text-xs text-muted">Sector-specific phrases flagged in {profile.sector || "your category"} (estimated)</p>
+          </div>
+          <Link href="/competitors" className="text-sm font-semibold text-lavender">Competitor insights <ArrowRight size={14} className="inline" /></Link>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {sectorInsights.riskyWords.slice(0, 8).map((word) => (
+            <span key={word} className="rounded-full bg-stone px-3 py-1 text-xs font-semibold">{word}</span>
+          ))}
+        </div>
+        <p className="mt-4 text-sm text-muted">{sectorInsights.recommendations[0]}</p>
       </section>
 
       <section className="surface p-5 sm:p-6">

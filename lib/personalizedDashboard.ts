@@ -49,6 +49,12 @@ export function getSectorRiskCards(profile: BrandComplianceProfile): RiskCard[] 
       { id: "active-review", title: "Ingredient and active claim review", description: "Reviews niacinamide, retinol, and other active marketing language.", tone: "mint" },
       { id: "beauty-ads", title: "Beauty ad compliance checklist", description: "Checks social and paid ads for platform-specific restrictions.", tone: "amber" },
     );
+  } else if (sector === "Wellness Products" || sector === "Herbal / Ayurvedic Products") {
+    cards.push(
+      { id: "wellness-score", title: "Wellness claim risk score", description: "Flags stress, sleep, and hormonal claims that cross into medical territory.", tone: "blue" },
+      { id: "herbal-watch", title: "Traditional medicine wording", description: "Reviews Ayurvedic and herbal claims for disease-treatment language.", tone: "amber" },
+      { id: "detox-alert", title: "Detox and cleanse alerts", description: "Common high-risk patterns in wellness marketing.", tone: "rose" },
+    );
   } else if (sector === "Functional Food") {
     cards.push(
       { id: "food-health", title: "Food health claim risk", description: "Reviews nutrition and benefit claims against food labeling rules.", tone: "blue" },

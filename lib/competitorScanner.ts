@@ -32,7 +32,7 @@ export function scanCompetitorContent(
   const high_risk_claims: CompetitorClaim[] = [];
 
   for (const sentence of sentences) {
-    if (!/supports?|helps?|cures?|treats?|prevents?|boosts?|guarantee|proven|clinically/i.test(sentence)) continue;
+    if (!/supports?|helps?|cures?|treats?|prevents?|boosts?|guarantee|proven|clinically|improves?|reduces?|eliminates?|reverses?|anti-aging|immunity|detox|weight|pain|inflammation|miracle|best|#1|dermatologist|fda/i.test(sentence)) continue;
     const analysis = analyzeClaim({
       claimText: sentence,
       productCategory: product.category,

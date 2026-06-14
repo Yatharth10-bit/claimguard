@@ -1,6 +1,5 @@
 /**
- * ClaimGuard pricing — aligned with Competitor Intelligence Report (Jun 2026).
- * US/IN anchors from report; other regions use market-appropriate local pricing.
+ * ClaimGuard pricing — founder-friendly early pricing (Jun 2026).
  */
 
 export type PricingRegionCode = "US" | "IN" | "GB" | "EU" | "CA" | "AU" | "SG" | "AE";
@@ -14,26 +13,28 @@ export type PricingRegion = {
   agency: number;
   enterpriseFrom: number;
   foundingGuard?: number;
+  foundingShield?: number;
 };
 
 export const PRICING_REGIONS: Record<PricingRegionCode, PricingRegion> = {
-  US: { country: "United States", currency: "USD", locale: "en-US", guard: 39, shield: 99, agency: 299, enterpriseFrom: 799, foundingGuard: 29 },
-  IN: { country: "India", currency: "INR", locale: "en-IN", guard: 999, shield: 2499, agency: 7999, enterpriseFrom: 24999 },
-  GB: { country: "United Kingdom", currency: "GBP", locale: "en-GB", guard: 32, shield: 79, agency: 249, enterpriseFrom: 649 },
-  EU: { country: "European Union", currency: "EUR", locale: "en-IE", guard: 36, shield: 89, agency: 279, enterpriseFrom: 749 },
-  CA: { country: "Canada", currency: "CAD", locale: "en-CA", guard: 49, shield: 129, agency: 399, enterpriseFrom: 999 },
-  AU: { country: "Australia", currency: "AUD", locale: "en-AU", guard: 59, shield: 149, agency: 449, enterpriseFrom: 1199 },
-  SG: { country: "Singapore", currency: "SGD", locale: "en-SG", guard: 49, shield: 129, agency: 399, enterpriseFrom: 999 },
-  AE: { country: "United Arab Emirates", currency: "AED", locale: "en-AE", guard: 149, shield: 369, agency: 1099, enterpriseFrom: 2999 },
+  US: { country: "United States", currency: "USD", locale: "en-US", guard: 29, shield: 79, agency: 199, enterpriseFrom: 699, foundingGuard: 19, foundingShield: 59 },
+  IN: { country: "India", currency: "INR", locale: "en-IN", guard: 799, shield: 1999, agency: 5999, enterpriseFrom: 19999, foundingGuard: 599, foundingShield: 1499 },
+  GB: { country: "United Kingdom", currency: "GBP", locale: "en-GB", guard: 24, shield: 65, agency: 169, enterpriseFrom: 549, foundingGuard: 16, foundingShield: 49 },
+  EU: { country: "European Union", currency: "EUR", locale: "en-IE", guard: 27, shield: 72, agency: 179, enterpriseFrom: 599, foundingGuard: 18, foundingShield: 55 },
+  CA: { country: "Canada", currency: "CAD", locale: "en-CA", guard: 39, shield: 99, agency: 269, enterpriseFrom: 849, foundingGuard: 29, foundingShield: 79 },
+  AU: { country: "Australia", currency: "AUD", locale: "en-AU", guard: 45, shield: 119, agency: 299, enterpriseFrom: 999, foundingGuard: 35, foundingShield: 89 },
+  SG: { country: "Singapore", currency: "SGD", locale: "en-SG", guard: 39, shield: 99, agency: 269, enterpriseFrom: 849, foundingGuard: 29, foundingShield: 79 },
+  AE: { country: "United Arab Emirates", currency: "AED", locale: "en-AE", guard: 109, shield: 289, agency: 749, enterpriseFrom: 2499, foundingGuard: 79, foundingShield: 219 },
 };
 
 export const ANNUAL_DISCOUNT = 0.2;
 export const TRIAL_DAYS = 7;
 export const TRIAL_CTA = `Start ${TRIAL_DAYS}-day trial`;
+export const EARLY_FOUNDER_PRICING_LINE = "Early founder pricing — limited time.";
 
 export type PaidBillingTier = "guard" | "shield";
 
-/** Maps UI tiers to existing Dodo product env keys (growth = Guard, team = Shield). */
+/** Maps UI tiers to existing Dodo product env keys (growth = Starter, team = Growth). */
 export const BILLING_TIER_TO_DODO: Record<PaidBillingTier, "growth" | "team"> = {
   guard: "growth",
   shield: "team",
@@ -45,17 +46,17 @@ export const PRICING_PLANS = [
     name: "Radar",
     subtitle: "Free",
     description: "Try claim checks before you commit.",
-    features: ["5 claim scans / month", "1 product", "Risk score + safer rewrites", "No credit card required"],
+    features: ["5 claim scans / month", "1 product", "Risk score + safer rewrites", "Onboarding personalization", "No credit card required"],
     cta: "Start free",
     href: "/signup",
     highlighted: false,
   },
   {
     id: "guard",
-    name: "Guard",
-    subtitle: "Starter",
-    description: "For founders publishing their first compliant copy.",
-    features: ["3 products", "30 claim checks / month", "Paste-based copy scanner (website + Amazon)", "Task board + PDF export", "Disclaimer checker"],
+    name: "Starter",
+    subtitle: "For small founders",
+    description: "Basic claim checks and a personalized dashboard to test copy safely.",
+    features: ["3 products", "30 claim checks / month", "Copy scanner (website + Amazon)", "Task board + PDF export", "Sector-specific tips"],
     cta: TRIAL_CTA,
     href: "/signup?next=%2Fsettings",
     highlighted: false,
@@ -63,10 +64,10 @@ export const PRICING_PLANS = [
   },
   {
     id: "shield",
-    name: "Shield",
-    subtitle: "Pro",
-    description: "For brands running a repeatable compliance workflow.",
-    features: ["15 products", "Unlimited claim checks", "Weekly digest + regulation feed", "SOP generator + compliance copilot", "Task board + audit trail"],
+    name: "Growth",
+    subtitle: "Most popular",
+    description: "For active DTC brands publishing weekly across channels.",
+    features: ["15 products", "Unlimited claim checks", "Competitor insights + social scan", "Weekly digest + regulation feed", "Compliance copilot + SOP generator"],
     cta: TRIAL_CTA,
     href: "/signup?next=%2Fsettings",
     highlighted: true,
@@ -74,10 +75,10 @@ export const PRICING_PLANS = [
   },
   {
     id: "agency",
-    name: "Agency",
-    subtitle: "Teams",
-    description: "For agencies and multi-brand operators.",
-    features: ["50 products", "Multi-brand workspaces", "SOP generator", "10 team seats", "Priority support"],
+    name: "Pro",
+    subtitle: "For scaling teams",
+    description: "Advanced analytics, bulk checks, and competitor monitoring.",
+    features: ["50 products", "Multi-brand workspaces", "Bulk claim checks", "Priority support", "10 team seats"],
     cta: "Contact sales",
     href: "/signup?next=%2Fsettings",
     highlighted: false,
@@ -85,10 +86,10 @@ export const PRICING_PLANS = [
 ] as const;
 
 export const PRICE_ANCHOR_COPY =
-  "Less than one consultant hour ($300) buys six months of ClaimGuard Shield.";
+  "Less than one consultant hour ($300) buys months of ClaimGuard Growth.";
 
 export const FOUNDING_OFFER_COPY =
-  "Founding brands: $29/mo Guard locked for life (first 50 users).";
+  "Founding brands: Starter from $19/mo locked for life (first 100 users).";
 
 export function formatPlanPrice(
   amount: number,

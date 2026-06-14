@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-06-14 — Megaprompt upgrade (competitors, pricing, performance, claim checker)
+
+### Competitors page (no longer empty)
+- Sector-based analytics, claim risk comparison, suggested competitors, personalized recommendations
+- `GET /api/competitors/insights` — onboarding-driven benchmarks (clearly marked estimated)
+- Empty states with onboarding CTA + manual industry picker
+- Scan route uses brand profile sector/market (not hardcoded supplement/US)
+
+### Pricing (founder-friendly)
+- Starter $29/mo, Growth $79/mo, Pro $199/mo (US); founding $19/$59
+- Renamed plans: Starter / Growth / Pro; "Early founder pricing — limited time"
+- Settings billing uses regional prices from `lib/pricing.ts`
+
+### Performance & UX
+- `GET /api/dashboard` — single fetch for compliance score + feature stats (deduped)
+- Skeleton loaders on dashboard cards; dynamic risk donut chart
+- Products empty state + correct market display
+
+### Claim checker
+- Practical compliance tone (non-judgmental, actionable)
+- `CLAIM_RULES_VERSION` + `npm run test:batch` offline regression pipeline (~2M+ cases/hour throughput)
+
+---
+
 ## 2026-06-14 — Feature expansion (Phases 2–5 complete)
 
 ### Features 2–6 (live)

@@ -28,6 +28,7 @@ import {
   BILLING_TIER_TO_DODO,
   formatEnterpriseFrom,
   formatPlanPrice,
+  EARLY_FOUNDER_PRICING_LINE,
   FOUNDING_OFFER_COPY,
   PRICE_ANCHOR_COPY,
   PRICING_PLANS,
@@ -54,7 +55,7 @@ import { useUsage } from "@/hooks/useUsage";
 import { resolveAuthSearchParamError } from "@/lib/authErrors";
 import { postAuthPath } from "@/lib/authRouting";
 import { signInWithGoogle } from "@/lib/googleAuth";
-import { BRAND_ONBOARDING_ENABLED, isOnboardingComplete, loadBrandProfile } from "@/lib/brandProfile";
+import { BRAND_ONBOARDING_ENABLED, isOnboardingComplete, loadBrandProfile, sectorLabel } from "@/lib/brandProfile";
 import { formatProfileCompanyName, isEncodedBrandProfileCompanyName } from "@/lib/brandProfileRemote";
 import { getSupabaseBrowser, isSupabaseConfigured } from "@/lib/supabase/client";
 import { analyzeClaim, CLAIM_DISCLAIMER } from "@/lib/analyzeClaim";
@@ -690,7 +691,17 @@ function Dashboard() {
           <h2 className="font-bold">Risk summary</h2>
           <p className="mt-1 text-xs text-muted">All checked claims</p>
           <div className="my-7 flex items-center justify-center">
-            <div className="relative grid h-36 w-36 place-items-center rounded-full" style={{ background: "conic-gradient(#42a678 0 60%, #e8a24d 60% 82%, #d9667a 82%)" }}>
+            <div
+              className="relative grid h-36 w-36 place-items-center rounded-full"
+              style={{
+                background: (() => {
+                  const total = counts.low + counts.medium + counts.high || 1;
+                  const safePct = (counts.low / total) * 100;
+                  const medPct = safePct + (counts.medium / total) * 100;
+                  return `conic-gradient(#42a678 0 ${safePct}%, #e8a24d ${safePct}% ${medPct}%, #d9667a ${medPct}% 100%)`;
+                })(),
+              }}
+            >
               <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center">
                 <div>
                   <strong className="text-2xl">{loading ? "..." : claims.length}</strong>
@@ -740,7 +751,11 @@ function Products() {
         <span className="text-xs text-muted">{loading ? "Loading..." : `${visible.length} products`}</span>
       </div>
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {visible.map((product) => (
+        {!loading && visible.length === 0 ? (
+          <div className="col-span-full">
+            <Empty icon={Package} title="No products yet" text="Add your first product to unlock personalized claim checks, Amazon scans, and competitor insights." action="/products/new" actionText="Add your first product" />
+          </div>
+        ) : visible.map((product) => (
           <Link href={`/products/${product.id}`} key={product.id} className="surface group p-5 transition hover:-translate-y-0.5 hover:shadow-lg">
             {(() => {
               const unresolvedTasks = tasks.filter((task) => task.product === product.name && !["Fixed", "Approved"].includes(task.status)).length;
@@ -766,7 +781,7 @@ function Products() {
             <div className="my-5 h-px bg-slate-100" />
             <div className="grid grid-cols-2 gap-y-3 text-xs">
               <span className="text-muted">Market</span>
-              <span className="text-right font-medium">United States</span>
+              <span className="text-right font-medium">{product.market || "—"}</span>
               <span className="text-muted">Ingredients</span>
               <span className="text-right font-medium">{product.ingredients.length}</span>
               <span className="text-muted">Claims checked</span>
@@ -1697,8 +1712,12 @@ function SocialMonitor() {
 }
 
 function Competitors() {
+  const { profile, isComplete } = useBrandProfile();
+  const subtitle = isComplete && profile?.sector
+    ? `Sector analytics and claim benchmarks for ${profile.brandName || "your brand"} in ${sectorLabel(profile.sector)}.`
+    : "Monitor competitor claims and detect high-risk copy in your category.";
   return (
-    <AppShell title="Competitor Tracker" subtitle="Monitor competitor claims and detect high-risk copy in your category.">
+    <AppShell title="Competitor insights" subtitle={subtitle}>
       <CompetitorsPage />
     </AppShell>
   );
@@ -1935,6 +1954,8 @@ function BillingPanel({ email }: { email: string }) {
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState("");
   const [billingMessage, setBillingMessage] = useState("");
+  const [pricingRegion, setPricingRegion] = useState<PricingRegionCode>("US");
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
 
   const loadSubscription = async () => {
     try {
@@ -1953,10 +1974,18 @@ function BillingPanel({ email }: { email: string }) {
 
   useEffect(() => {
     void loadSubscription();
+    try {
+      const storedRegion = localStorage.getItem("claimguard-pricing-region") as PricingRegionCode | null;
+      if (storedRegion && PRICING_REGIONS[storedRegion]) setPricingRegion(storedRegion);
+      setBillingCycle(localStorage.getItem("claimguard-billing-cycle") === "annual" ? "annual" : "monthly");
+    } catch {
+      // ignore
+    }
   }, [email]);
 
+  const region = PRICING_REGIONS[pricingRegion];
+
   const startCheckout = async (tier: "guard" | "shield") => {
-    const billingCycle = localStorage.getItem("claimguard-billing-cycle") === "annual" ? "annual" : "monthly";
     const plan = `${BILLING_TIER_TO_DODO[tier]}_${billingCycle}`;
     setCheckoutLoading(plan);
     setBillingMessage("");
@@ -1997,15 +2026,15 @@ function BillingPanel({ email }: { email: string }) {
         <>
           <div className="mt-5 rounded-xl bg-stone p-4">
             <p className="text-xs text-muted">Current access</p>
-            <p className="mt-1 text-lg font-extrabold capitalize">{active ? (subscription.plan.startsWith("growth") ? "Guard" : subscription.plan.startsWith("team") ? "Shield" : subscription.plan.replace("_", " ")) : "Radar (Free)"}</p>
+            <p className="mt-1 text-lg font-extrabold capitalize">{active ? (subscription.plan.startsWith("growth") ? "Starter" : subscription.plan.startsWith("team") ? "Growth" : subscription.plan.replace("_", " ")) : "Radar (Free)"}</p>
             {subscription?.product_id && <p className="mt-1 text-xs text-muted">{subscription.product_id}</p>}
             {subscription?.next_billing_date && <p className="mt-3 text-xs text-muted">{subscription.cancel_at_next_billing_date ? "Access ends" : "Renews"} {formatDate(subscription.next_billing_date)}</p>}
           </div>
           {usage && <div className="mt-4"><UsageMeter usage={usage} /></div>}
           {billingMessage && <p className="mt-4 text-sm leading-6 text-muted">{billingMessage}</p>}
           <div className="mt-5 flex flex-wrap gap-2">
-            <button onClick={() => void startCheckout("guard")} disabled={Boolean(checkoutLoading) || !configured} className="primary">{checkoutLoading === "growth_monthly" || checkoutLoading === "growth_annual" ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}Choose Guard — $39/mo</button>
-            <button onClick={() => void startCheckout("shield")} disabled={Boolean(checkoutLoading) || !configured} className="secondary">Choose Shield — $99/mo</button>
+            <button onClick={() => void startCheckout("guard")} disabled={Boolean(checkoutLoading) || !configured} className="primary">{checkoutLoading === "growth_monthly" || checkoutLoading === "growth_annual" ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}Choose Starter — {formatPlanPrice(region.guard, region, billingCycle)}/mo</button>
+            <button onClick={() => void startCheckout("shield")} disabled={Boolean(checkoutLoading) || !configured} className="secondary">Choose Growth — {formatPlanPrice(region.shield, region, billingCycle)}/mo</button>
             {subscription?.customer_id && <button onClick={() => void openPortal()} disabled={Boolean(checkoutLoading)} className="secondary">Manage billing <ExternalLink size={14} /></button>}
           </div>
           <p className="mt-4 text-xs text-muted">Checkout uses the monthly or annual preference selected on the pricing page. Signed in as {email || "your workspace account"}.</p>
@@ -2679,11 +2708,12 @@ function Landing() {
           <div className="mx-auto max-w-7xl">
             <div className="mx-auto max-w-2xl text-center">
               <div className="flex flex-wrap items-center justify-center gap-2">
-                <p className="text-xs font-bold uppercase tracking-[.18em] text-[#14a995]">Transparent pricing under $100/mo</p>
+                <p className="text-xs font-bold uppercase tracking-[.18em] text-[#14a995]">Transparent pricing under $80/mo</p>
                 <BetaBadge />
               </div>
-              <h2 className="mt-4 text-3xl font-extrabold tracking-[-.04em] sm:text-4xl">Consultants charge $300/hr. ClaimGuard starts at $39/mo.</h2>
+              <h2 className="mt-4 text-3xl font-extrabold tracking-[-.04em] sm:text-4xl">Consultants charge $300/hr. ClaimGuard starts at {formatPlanPrice(region.guard, region, billingCycle)}/mo.</h2>
               <p className="mt-4 text-sm leading-7 text-muted">{PRICE_ANCHOR_COPY} Plans are locally priced for your market.</p>
+              <p className="mt-3 text-xs font-semibold text-muted">{EARLY_FOUNDER_PRICING_LINE}</p>
               {mounted && pricingRegion === "US" && <p className="mt-3 rounded-full bg-mint px-4 py-2 text-xs font-semibold text-safe">{FOUNDING_OFFER_COPY}</p>}
             </div>
             <div className="mx-auto mt-8 flex max-w-3xl flex-col items-center justify-between gap-4 rounded-2xl border border-black/[.08] bg-stone p-3 sm:flex-row">

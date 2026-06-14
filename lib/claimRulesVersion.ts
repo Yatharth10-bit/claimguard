@@ -1,0 +1,1 @@
+export const CLAIM_RULES_VERSION = "1.3.0";
