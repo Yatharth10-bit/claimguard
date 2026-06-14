@@ -72,14 +72,22 @@ export async function POST(request: Request) {
 
   if (parsed.data.try_public_fetch && profile_url && posts.length === 0) {
     const fetched = await fetchPublicSocialData(platform, handle, profile_url);
-    if (fetched.fetch_method === "public_fetch" && fetched.posts.length > 0) {
+    const hasFetchedContent = Boolean(fetched.bio?.trim() || fetched.posts.length > 0);
+    if (fetched.fetch_method === "public_fetch" && hasFetchedContent) {
       bio = bio || fetched.bio;
-      posts = fetched.posts;
+      posts = fetched.posts.length ? fetched.posts : posts;
       followerCount = followerCount ?? fetched.follower_count_public;
       sourceType = "public_fetch";
       fetchMessage = fetched.message;
     } else {
-      fetchMessage = fetched.message;
+      if (fetched.bio?.trim() || fetched.posts.length > 0) {
+        bio = bio || fetched.bio;
+        posts = fetched.posts.length ? fetched.posts : posts;
+        followerCount = followerCount ?? fetched.follower_count_public;
+        fetchMessage = fetched.message || "Partial public data retrieved.";
+      } else {
+        fetchMessage = fetched.message;
+      }
     }
   }
 

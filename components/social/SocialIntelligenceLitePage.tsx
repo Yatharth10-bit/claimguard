@@ -226,8 +226,8 @@ export function SocialIntelligenceLitePage() {
               <Instagram size={36} className="mx-auto text-muted" />
               <h3 className="mt-4 text-lg font-bold">Start your free social claim scan</h3>
               <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-                Paste an Instagram, TikTok, YouTube, Reddit, X, Facebook, or LinkedIn profile link.
-                If auto-fetch fails, paste your bio and captions manually.
+                Paste a public Instagram, YouTube, or Reddit profile link for automatic fetch.
+                TikTok, X, Facebook, and LinkedIn still need manual paste if auto-fetch fails.
               </p>
               <button type="button" className="primary mt-6" onClick={() => setModalOpen(true)}>
                 <ScanText size={16} /> Run free public scan

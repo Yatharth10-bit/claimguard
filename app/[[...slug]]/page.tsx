@@ -1778,7 +1778,7 @@ function SocialMonitor() {
   const { profile, isComplete } = useBrandProfile();
   const subtitle = isComplete && profile?.sector
     ? `Free social claim audit for ${profile.brandName || "your brand"} — public data only, estimated analytics.`
-    : "Free AI-powered social claim scanner — public data only. Paste profiles or captions manually.";
+    : "Free AI-powered social claim scanner — auto-fetches public Instagram, YouTube, and Reddit.";
   return (
     <AppShell title="Social Intelligence Lite" subtitle={subtitle}>
       <SocialIntelligenceLitePage />
