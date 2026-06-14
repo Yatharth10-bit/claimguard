@@ -4,6 +4,7 @@ import {
   DEFAULT_LEARNING_SOURCES,
   generateSyntheticLearningBatch,
   runDailyRegulatorySync,
+  runRegulatoryLearningFetch,
 } from "@/lib/claimIntelligence/learningPipeline";
 
 function authorizeCron(request: Request): boolean {
@@ -12,7 +13,7 @@ function authorizeCron(request: Request): boolean {
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
-export async function POST(request: Request) {
+async function handleLearning(request: Request) {
   if (!authorizeCron(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -40,7 +41,14 @@ export async function POST(request: Request) {
         }, { onConflict: "source_url" });
       }
 
-      const batch = generateSyntheticLearningBatch();
+      let regulatoryClaims: Awaited<ReturnType<typeof runRegulatoryLearningFetch>> = [];
+      try {
+        regulatoryClaims = await runRegulatoryLearningFetch(3);
+      } catch {
+        regulatoryClaims = [];
+      }
+
+      const batch = [...generateSyntheticLearningBatch(), ...regulatoryClaims];
       for (const claim of batch) {
         const approved = claim.approvedForProduction;
         const { error } = await admin.from("claim_examples").insert({
@@ -91,4 +99,12 @@ export async function POST(request: Request) {
       claimsExtracted,
     }, { status: 500 });
   }
+}
+
+export async function GET(request: Request) {
+  return handleLearning(request);
+}
+
+export async function POST(request: Request) {
+  return handleLearning(request);
 }

@@ -28,7 +28,7 @@ const admin = createClient(
 );
 
 const BATCH = 500;
-const MAX_INSERT = Number(process.env.SEED_LIMIT || 5000);
+const MAX_INSERT = Number(process.env.SEED_LIMIT || 15000);
 
 async function main() {
   const examples = getSeedExamples().slice(0, MAX_INSERT);

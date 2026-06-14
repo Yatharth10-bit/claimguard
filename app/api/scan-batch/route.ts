@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { analyzeClaim } from "@/lib/analyzeClaim";
 import { assertCanScan, getUsageSnapshot, reserveClaimScans } from "@/lib/usage";
 import { splitClaimLikeSentences } from "@/lib/workflow";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { runClaimIntelligence } from "@/lib/claimIntelligence/engine";
+import { fetchApprovedExamples, fetchActiveDbRules } from "@/lib/claimIntelligence/serverContext";
 
 const contextTypes = ["Label", "Website", "Amazon listing", "Ad copy", "Social media", "Influencer script"] as const;
 
@@ -14,6 +16,7 @@ const inputSchema = z.object({
   ingredients: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
   market: z.string().trim().min(1).max(200),
   contextType: z.enum(contextTypes),
+  sector: z.string().trim().max(100).optional(),
 });
 
 export async function POST(request: Request) {
@@ -47,18 +50,38 @@ export async function POST(request: Request) {
       }, { status: 402 });
     }
 
+    const admin = getSupabaseAdmin();
+    const sector = parsed.data.sector || "";
+    const [dbExamples, dbRules] = admin
+      ? await Promise.all([fetchApprovedExamples(admin, sector, 100), fetchActiveDbRules(admin, sector, 30)])
+      : [[], []];
+
     const analyses = sentences.map((claimText) => {
-      const result = analyzeClaim({
-        claimText,
-        productCategory: parsed.data.productCategory,
-        ingredients: parsed.data.ingredients,
-        market: parsed.data.market,
-        contextType: parsed.data.contextType,
-      });
+      const result = runClaimIntelligence(
+        {
+          claimText,
+          productCategory: parsed.data.productCategory,
+          ingredients: parsed.data.ingredients,
+          market: parsed.data.market,
+          contextType: parsed.data.contextType,
+          sector,
+        },
+        { dbExamples, dbRules },
+      );
       return {
         originalClaim: claimText,
         contextType: parsed.data.contextType,
-        ...result,
+        riskLevel: result.riskLevel,
+        riskScore: result.riskScore,
+        riskyPhrases: result.riskyPhrases,
+        explanation: result.explanation,
+        saferRewrite: result.saferRewrite,
+        confidenceScore: result.confidenceScore,
+        mainIssue: result.mainIssue,
+        sourceReferences: result.sourceReferences,
+        checklist: result.checklist,
+        disclaimer: result.disclaimer,
+        rulesVersion: result.rulesVersion,
       };
     });
 
@@ -66,7 +89,7 @@ export async function POST(request: Request) {
       analyses,
       scanned: sentences.length,
       usage: await getUsageSnapshot(user.id),
-      provider: "rules",
+      provider: "claim-intelligence",
     });
   } catch {
     return NextResponse.json({ error: "Unable to scan this copy right now." }, { status: 500 });

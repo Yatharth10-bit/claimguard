@@ -9,7 +9,7 @@ function authorizeCron(request: Request): boolean {
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
-export async function POST(request: Request) {
+async function handleEvaluation(request: Request) {
   if (!authorizeCron(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -37,4 +37,12 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ ok: true, report });
+}
+
+export async function GET(request: Request) {
+  return handleEvaluation(request);
+}
+
+export async function POST(request: Request) {
+  return handleEvaluation(request);
 }

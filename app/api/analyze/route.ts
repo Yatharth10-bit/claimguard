@@ -5,6 +5,7 @@ import { assertCanScan, getUsageSnapshot, releaseClaimScans, reserveClaimScans }
 import { requireUser } from "@/lib/apiAuth";
 import { fetchOwnedProduct } from "@/lib/ownedProduct";
 import { runClaimIntelligence } from "@/lib/claimIntelligence/engine";
+import { fetchApprovedExamples, fetchActiveDbRules } from "@/lib/claimIntelligence/serverContext";
 import { loadBrandProfileServer } from "@/lib/brandProfileServer";
 
 const contextTypes = ["Label", "Website", "Amazon listing", "Ad copy", "Social media", "Influencer script"] as const;
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
     const auth = await requireUser();
     if ("error" in auth) {
       if (process.env.NODE_ENV !== "production") {
-        const analysis = runClaimIntelligence(input);
+        const analysis = runClaimIntelligence(input, {});
         return NextResponse.json({
           analysis: responseRow(input, analysis),
           provider: "claim-intelligence",
@@ -114,15 +115,12 @@ export async function POST(request: Request) {
     const profile = await loadBrandProfileServer(user.id);
     const sector = profile?.sector || "";
 
-    let dbExamples: { claim_text: string; sector: string; risk_level: string; risk_reason: string; safer_rewrite: string; confidence_score: number; source: string }[] = [];
-    const { data: approved } = await admin
-      .from("claim_examples")
-      .select("claim_text, sector, risk_level, risk_reason, safer_rewrite, confidence_score, source")
-      .eq("approved_for_production", true)
-      .limit(200);
-    if (approved) dbExamples = approved;
+    const [dbExamples, dbRules] = await Promise.all([
+      fetchApprovedExamples(admin, sector, 200),
+      fetchActiveDbRules(admin, sector, 50),
+    ]);
 
-    const analysis = runClaimIntelligence({ ...input, sector }, dbExamples);
+    const analysis = runClaimIntelligence({ ...input, sector }, { dbExamples, dbRules });
     let claimCheckResultId: string | undefined;
 
     const { data: checkResult } = await admin.from("claim_check_results").insert({

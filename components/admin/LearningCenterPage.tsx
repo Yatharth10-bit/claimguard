@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, BookOpen, CheckCircle, Database, RefreshCw, Shield } from "lucide-react";
+import { PendingReviewQueue } from "@/components/admin/PendingReviewQueue";
 
 type LearningStats = {
   tablesMissing?: boolean;
@@ -133,6 +134,8 @@ export function LearningCenterPage() {
           </ul>
         </section>
       </div>
+
+      <PendingReviewQueue />
 
       <section className="surface p-5">
         <h2 className="text-sm font-bold text-ink">Recent learning runs</h2>

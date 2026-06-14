@@ -1197,6 +1197,23 @@ function ClaimChecker() {
       let usedClientFallback = false;
 
       if (isSupabaseConfigured()) {
+        void fetch("/api/claim-intelligence/enrich", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            claimText: input.claimText,
+            contextType: input.contextType,
+            productCategory: input.productCategory,
+            ingredients: input.ingredients,
+            market: input.market,
+            sector: profile?.sector,
+          }),
+        }).then(async (enrichRes) => {
+          if (!enrichRes.ok) return;
+          const enrichBody = await enrichRes.json();
+          if (enrichBody.intelligence) setIntelligence(enrichBody.intelligence);
+        }).catch(() => undefined);
+
         const response = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

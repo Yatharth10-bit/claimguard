@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/claim-learning",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/claim-evaluation",
+      "schedule": "0 7 * * *"
+    }
+  ]
+}
