@@ -1,6 +1,10 @@
 # ClaimGuard
 
-ClaimGuard is a compliance-review workspace for food, supplement, and wellness brands. It helps teams identify risky marketing claims, monitor official regulatory updates, organize remediation tasks, and document review decisions.
+Review product claims alongside regulatory updates for food, supplement and wellness brands. Flagged wording and suggested revisions give a reviewer a concrete place to start.
+
+![ClaimGuard landing page](docs/portfolio-preview.webp)
+
+[Read the portfolio case study](https://yatharth10-bit.github.io/Yatharth-Portfolio/claimguard.html)
 
 ## Features
 
